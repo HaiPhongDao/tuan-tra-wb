@@ -58,6 +58,10 @@ function doGet(e) {
     if (p.action === 'tap') return out_(actTap_(p));
     if (p.action === 'cancel') return out_(actCancel_(p));
     if (p.action === 'dash') return out_(actDash_(p));
+    if (p.action === 'staffSet') return out_(actStaffSet_(p));
+    if (p.action === 'staffKey') return out_(actStaffKey_(p));
+    if (p.action === 'staffDel') return out_(actStaffDel_(p));
+    if (p.action === 'cfgSet') return out_(actCfgSet_(p));
     return out_({ ok: false, err: 'action' });
   } catch (err) {
     return out_({ ok: false, err: 'server', msg: String(err) });
@@ -109,10 +113,87 @@ function actCancel_(p) {
   return { ok: false, err: 'missing' };
 }
 
-function actDash_(p) {
+function adminOk_(p) {
   const c = cfgMap_();
-  if (!c.adminKey || p.ak !== String(c.adminKey)) return { ok: false, err: 'admin' };
-  return Object.assign({ ok: true }, dashboard_(Date.now(), true));
+  return !!c.adminKey && p.ak === String(c.adminKey);
+}
+
+function actDash_(p) {
+  if (!adminOk_(p)) return { ok: false, err: 'admin' };
+  const c = cfgMap_();
+  const cfg = {};
+  EDITABLE_CFG.forEach(k => { cfg[k] = c[k]; });
+  return Object.assign({ ok: true }, dashboard_(Date.now(), true), { roster: staffList_(), cfgAll: cfg });
+}
+
+const EDITABLE_CFG = ['gapMin', 'tolMin', 'startGraceMin', 'roundGraceMin', 'minRounds', 'dayStartHour', 'nightStartHour', 'email'];
+const CA_VALUES = ['Ngày', 'Đêm', 'Cả hai', 'Nghỉ', ''];
+
+function staffRowIndex_(id) {
+  const sh = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SHEET_NV);
+  const n = sh.getLastRow();
+  if (n < 2) return { sh, row: 0 };
+  const ids = sh.getRange(2, 1, n - 1, 1).getValues();
+  for (let i = 0; i < ids.length; i++) if (String(ids[i][0]).trim() === id) return { sh, row: i + 2 };
+  return { sh, row: 0 };
+}
+
+function actStaffSet_(p) {
+  if (!adminOk_(p)) return { ok: false, err: 'admin' };
+  const id = String(p.id || '').trim();
+  const ten = String(p.ten || '').trim();
+  const ca = String(p.ca === undefined ? '' : p.ca).trim();
+  if (!/^[A-Za-z0-9_-]{1,20}$/.test(id)) return { ok: false, err: 'id', msg: 'Mã nhân viên chỉ gồm chữ không dấu, số, gạch, tối đa 20 ký tự' };
+  if (!ten || ten.length > 60) return { ok: false, err: 'ten', msg: 'Tên không được trống, tối đa 60 ký tự' };
+  if (CA_VALUES.indexOf(ca) < 0) return { ok: false, err: 'ca' };
+  const on = p.on === '0' ? '' : 'x';
+  const lock = LockService.getScriptLock();
+  lock.waitLock(20000);
+  try {
+    const f = staffRowIndex_(id);
+    if (f.row) {
+      f.sh.getRange(f.row, 2).setValue(ten);
+      f.sh.getRange(f.row, 4).setValue(ca);
+      f.sh.getRange(f.row, 5).setValue(on);
+    } else {
+      f.sh.appendRow([id, ten, randKey_(), ca, on]);
+    }
+  } finally { lock.releaseLock(); }
+  return { ok: true };
+}
+
+function actStaffKey_(p) {
+  if (!adminOk_(p)) return { ok: false, err: 'admin' };
+  const f = staffRowIndex_(String(p.id || '').trim());
+  if (!f.row) return { ok: false, err: 'missing' };
+  f.sh.getRange(f.row, 3).setValue(randKey_());
+  return { ok: true };
+}
+
+function actStaffDel_(p) {
+  if (!adminOk_(p)) return { ok: false, err: 'admin' };
+  const lock = LockService.getScriptLock();
+  lock.waitLock(20000);
+  try {
+    const f = staffRowIndex_(String(p.id || '').trim());
+    if (!f.row) return { ok: false, err: 'missing' };
+    f.sh.deleteRow(f.row);
+  } finally { lock.releaseLock(); }
+  return { ok: true };
+}
+
+function actCfgSet_(p) {
+  if (!adminOk_(p)) return { ok: false, err: 'admin' };
+  const k = String(p.key || '');
+  if (EDITABLE_CFG.indexOf(k) < 0) return { ok: false, err: 'key' };
+  let v = String(p.value === undefined ? '' : p.value).trim();
+  if (k !== 'email') {
+    const n = Number(v);
+    if (!isFinite(n) || n < 0 || n > 1000) return { ok: false, err: 'value' };
+    v = n;
+  }
+  setCfg_(k, v);
+  return { ok: true };
 }
 
 /* ---------- Dữ liệu ---------- */

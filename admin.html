@@ -96,6 +96,19 @@ ul.list time { font-variant-numeric: tabular-nums; font-weight: 600; white-space
 .linkrow { padding: 10px 0; border-bottom: 1px solid var(--line); }
 .linkrow b { display: block; }
 .linkrow code { display: block; font-size: 12px; color: var(--muted); overflow-wrap: anywhere; margin: 4px 0 8px; }
+.staffrow { padding: 12px 0; border-bottom: 1px solid var(--line); display: grid; gap: 8px; }
+.staffrow .r1 { display: grid; grid-template-columns: 1fr 120px; gap: 8px; }
+.staffrow .idline { font-size: 12px; color: var(--muted); }
+.staffrow .acts { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.staffrow .acts .btn { min-height: 40px; padding: 8px 12px; font-size: 14px; }
+.staffrow label.on { display: flex; gap: 6px; align-items: center; font-size: 14px; }
+.staffrow label.on input { width: 20px; height: 20px; accent-color: var(--accent-2); }
+.staffrow code { font-size: 12px; color: var(--muted); overflow-wrap: anywhere; }
+select, .staffrow input[type=text], .addbox input[type=text] { width: 100%; min-height: 44px; font: inherit; color: var(--fg); background: var(--bg); border: 1px solid var(--line); border-radius: 10px; padding: 8px 10px; }
+.addbox { display: grid; gap: 8px; margin-top: 12px; padding-top: 12px; border-top: 2px solid var(--line); }
+.addbox .r2 { display: grid; grid-template-columns: 1fr 1fr 120px; gap: 8px; }
+.cfgrow { display: grid; grid-template-columns: 1fr 100px; gap: 8px; align-items: center; padding: 8px 0; border-bottom: 1px solid var(--line); font-size: 14px; }
+.toast { position: fixed; left: 50%; bottom: calc(16px + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%); background: var(--fg); color: var(--bg); padding: 10px 16px; border-radius: 10px; font-size: 14px; z-index: 30; max-width: calc(100% - 32px); }
 .hint { font-size: 13px; color: var(--muted); margin: 8px 0 0; }
 .err { color: var(--red); font-weight: 600; }
 </style>
@@ -132,10 +145,25 @@ ul.list time { font-variant-numeric: tabular-nums; font-weight: 600; white-space
     <ul class="list" id="recent"></ul>
   </details>
 
-  <details class="panel" id="linksBox">
-    <summary>Link cho nhân viên</summary>
-    <div id="links"></div>
-    <p class="hint">Mỗi link có mã riêng của một nhân viên. Gửi riêng cho từng người, không gửi vào nhóm chung. Đổi cột "ma" trong trang NhanVien để vô hiệu link cũ.</p>
+  <details class="panel" id="staffBox" open>
+    <summary>Nhân viên và ca trực</summary>
+    <div id="roster"></div>
+    <div class="addbox">
+      <b>Thêm nhân viên</b>
+      <div class="r2">
+        <input type="text" id="newId" placeholder="Mã (vd B02)" autocapitalize="characters" aria-label="Mã nhân viên">
+        <input type="text" id="newName" placeholder="Họ tên" aria-label="Họ tên">
+        <select id="newCa" aria-label="Ca trực"><option>Ngày</option><option>Đêm</option><option>Cả hai</option><option>Nghỉ</option></select>
+      </div>
+      <button class="btn primary" id="addStaff" type="button">Thêm</button>
+    </div>
+    <p class="hint">Mỗi nhân viên có link riêng kèm mã bí mật. Gửi riêng từng người, không gửi vào nhóm chung. "Đổi mã" làm link cũ ngừng hoạt động. Chỉ người có ca trực khớp ca hiện tại mới bị tính báo đỏ.</p>
+  </details>
+
+  <details class="panel" id="cfgBox">
+    <summary>Quy tắc báo đỏ</summary>
+    <div id="cfgList"></div>
+    <p class="hint">Mỗi ô tự lưu khi bạn rời ô. Email để trống thì dùng email của chủ Sheet.</p>
   </details>
 </main>
 
@@ -234,24 +262,104 @@ function draw(d) {
   });
   if (!d.recent.length) { const li = document.createElement("li"); li.textContent = "Chưa có hoạt động."; rc.appendChild(li); }
 
-  const lk = $("links"); lk.textContent = "";
+  drawRoster(d);
+  drawCfg(d);
+}
+
+const CA_OPTS = ["Ngày", "Đêm", "Cả hai", "Nghỉ"];
+const CFG_LABELS = {
+  gapMin: "Phút giữa hai vòng", tolMin: "Dung sai trước khi báo đỏ quá giờ (phút)", startGraceMin: "Chờ tín hiệu đầu ca (phút)",
+  roundGraceMin: "Chờ đủ điểm trong một vòng (phút)", minRounds: "Số vòng tối thiểu mỗi ca", dayStartHour: "Giờ bắt đầu Ca Ngày",
+  nightStartHour: "Giờ bắt đầu Ca Đêm", email: "Email nhận cảnh báo"
+};
+let keyForCalls = "";
+function toast(t) {
+  const el = document.createElement("div"); el.className = "toast"; el.textContent = t; document.body.appendChild(el);
+  setTimeout(() => el.remove(), 2500);
+}
+async function api(params) {
+  const q = new URLSearchParams(Object.assign({ ak: keyForCalls }, params));
+  const r = await fetch(CFG.SCRIPT_URL + "?" + q.toString(), { cache: "no-store" });
+  return r.json();
+}
+async function act(params, okMsg) {
+  try {
+    const j = await api(params);
+    if (j.ok) { toast(okMsg || "Đã lưu"); await load(); return true; }
+    toast(j.msg || ("Không lưu được: " + j.err));
+  } catch (e) { toast("Mất kết nối, thử lại"); }
+  return false;
+}
+function staffLink(s) {
   const base = new URL("index.html", location.href).href.replace(/index\.html$/, "");
-  d.staff.forEach(s => {
-    if (!s.ma) return;
-    const url = base + "?u=" + encodeURIComponent(s.id) + "&k=" + encodeURIComponent(s.ma) + "&n=" + encodeURIComponent(s.ten);
-    const row = document.createElement("div"); row.className = "linkrow";
-    const b = document.createElement("b"); b.textContent = s.ten;
-    const code = document.createElement("code"); code.textContent = url;
-    const btn = document.createElement("button"); btn.type = "button"; btn.className = "btn"; btn.textContent = "Sao chép link";
-    btn.addEventListener("click", async () => {
-      try { await navigator.clipboard.writeText(url); btn.textContent = "Đã sao chép"; }
-      catch (e) { const r = document.createRange(); r.selectNodeContents(code); const sel = getSelection(); sel.removeAllRanges(); sel.addRange(r); btn.textContent = "Chọn xong, tự sao chép"; }
-      setTimeout(() => btn.textContent = "Sao chép link", 2000);
+  return base + "?u=" + encodeURIComponent(s.id) + "&k=" + encodeURIComponent(s.ma) + "&n=" + encodeURIComponent(s.ten);
+}
+function drawRoster(d) {
+  keyForCalls = $("ak").value.trim();
+  const box = $("roster"); box.textContent = "";
+  d.roster.forEach(s => {
+    const row = document.createElement("div"); row.className = "staffrow";
+    const r1 = document.createElement("div"); r1.className = "r1";
+    const nm = document.createElement("input"); nm.type = "text"; nm.value = s.ten; nm.maxLength = 60; nm.id = "nm_" + s.id; nm.setAttribute("aria-label", "Họ tên " + s.id);
+    const ca = document.createElement("select"); ca.id = "ca_" + s.id; ca.setAttribute("aria-label", "Ca trực " + s.id);
+    CA_OPTS.forEach(o => { const op = document.createElement("option"); op.value = o; op.textContent = o; ca.appendChild(op); });
+    ca.value = CA_OPTS.indexOf(s.ca) >= 0 ? s.ca : "Nghỉ";
+    r1.append(nm, ca);
+    const idl = document.createElement("div"); idl.className = "idline"; idl.textContent = "Mã " + s.id + (s.on ? "" : " · đang tạm dừng");
+    const acts = document.createElement("div"); acts.className = "acts";
+    const lab = document.createElement("label"); lab.className = "on";
+    const on = document.createElement("input"); on.type = "checkbox"; on.checked = s.on; on.id = "on_" + s.id;
+    lab.append(on, "Đang làm");
+    const save = () => act({ action: "staffSet", id: s.id, ten: nm.value.trim(), ca: ca.value, on: on.checked ? "1" : "0" }, "Đã lưu " + s.ten);
+    const bSave = mk("Lưu", save, "primary");
+    const bCopy = mk("Sao chép link", async () => {
+      const url = staffLink(s);
+      try { await navigator.clipboard.writeText(url); toast("Đã sao chép link của " + s.ten); }
+      catch (e) { prompt1(url); }
     });
-    row.append(b, code, btn); lk.appendChild(row);
+    const bKey = mk("Đổi mã", armed2(() => act({ action: "staffKey", id: s.id }, "Đã đổi mã, link cũ hết hiệu lực"), "Chạm lại để đổi mã"));
+    const bDel = mk("Xoá", armed2(() => act({ action: "staffDel", id: s.id }, "Đã xoá " + s.ten), "Chạm lại để xoá"));
+    acts.append(lab, bSave, bCopy, bKey, bDel);
+    row.append(r1, idl, acts);
+    box.appendChild(row);
+  });
+  if (!d.roster.length) { const p = document.createElement("p"); p.className = "hint"; p.textContent = "Chưa có nhân viên. Thêm bên dưới."; box.appendChild(p); }
+}
+function mk(text, fn, cls) {
+  const b = document.createElement("button"); b.type = "button"; b.className = "btn" + (cls ? " " + cls : ""); b.textContent = text;
+  b.addEventListener("click", fn); return b;
+}
+function armed2(fn, armedText) {
+  let t = null, orig = null;
+  return function (ev) {
+    const b = ev.currentTarget;
+    if (!t) { orig = b.textContent; b.textContent = armedText; t = setTimeout(() => { t = null; b.textContent = orig; }, 3500); return; }
+    clearTimeout(t); t = null; b.textContent = orig; fn();
+  };
+}
+function prompt1(url) {
+  const ta = document.createElement("textarea"); ta.value = url; ta.readOnly = true; ta.style.cssText = "width:100%;min-height:90px;margin-top:8px";
+  $("roster").prepend(ta); ta.select(); toast("Chọn và sao chép link trong ô vừa hiện");
+}
+function drawCfg(d) {
+  const box = $("cfgList"); box.textContent = "";
+  Object.keys(CFG_LABELS).forEach(k => {
+    const row = document.createElement("div"); row.className = "cfgrow";
+    const l = document.createElement("label"); l.textContent = CFG_LABELS[k]; l.htmlFor = "cfg_" + k;
+    const i = document.createElement("input"); i.type = "text"; i.id = "cfg_" + k; i.value = d.cfgAll[k] === undefined ? "" : d.cfgAll[k];
+    if (k !== "email") i.inputMode = "numeric"; else row.style.gridTemplateColumns = "1fr";
+    i.addEventListener("change", () => act({ action: "cfgSet", key: k, value: i.value }, "Đã lưu quy tắc"));
+    if (k === "email") { row.append(l, i); } else row.append(l, i);
+    box.appendChild(row);
   });
 }
 
+$("addStaff").addEventListener("click", async () => {
+  const id = $("newId").value.trim(), ten = $("newName").value.trim();
+  if (!id || !ten) { toast("Nhập mã và họ tên"); return; }
+  const ok = await act({ action: "staffSet", id, ten, ca: $("newCa").value, on: "1" }, "Đã thêm " + ten);
+  if (ok) { $("newId").value = ""; $("newName").value = ""; }
+});
 $("go").addEventListener("click", load);
 $("ak").addEventListener("keydown", e => { if (e.key === "Enter") load(); });
 $("sound").addEventListener("click", () => {
