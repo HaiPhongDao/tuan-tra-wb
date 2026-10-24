@@ -225,7 +225,7 @@ body { margin: 0; }
 
     <h3>Gửi form</h3>
     <label class="field"><span>Khi chạm một điểm</span>
-      <select id="mode"><option value="fill">Chỉ điền sẵn form, tôi tự bấm Gửi</option><option value="send">Gửi luôn, không cần bấm Gửi</option></select>
+      <select id="mode"><option value="fill">Chỉ điền sẵn form, tôi tự bấm Gửi</option><option value="auto">Tự động gửi ngầm, không mở tab</option><option value="send">Gửi luôn bằng link (mở tab mới)</option></select>
     </label>
     <p class="hint" id="modeHint"></p>
     <p class="hint">Mặc định mỗi lần chạm điền sẵn "An ninh đảm bảo" và "Đạt" cho mọi hạng mục. Chỉ chạm khi bạn đã kiểm tra, và dùng ô "Có bất thường" khi có lỗi.</p>
@@ -354,7 +354,7 @@ function currentRound() {
   return { r, done };
 }
 
-function buildUrl(e) {
+function formParams(e) {
   const d = new Date(e.t);
   const p = new URLSearchParams();
   p.set("entry.1183981718", e.name);
@@ -374,6 +374,10 @@ function buildUrl(e) {
   if (e.t667) p.set("entry.1932488576", e.t667);
   p.set("entry.2016413647", e.t7 || "An ninh an toàn");
   if (e.t8) p.set("entry.696980332", e.t8);
+  return p;
+}
+function buildUrl(e) {
+  const p = formParams(e);
   if (e.mode === "send") {
     // Form có 4 trang nên phải khai báo đủ lịch sử trang thì Google mới nhận như đã bấm Gửi ở trang cuối.
     p.set("fvv", "1"); p.set("pageHistory", "0,1,2,3"); p.set("submit", "Submit");
@@ -382,6 +386,33 @@ function buildUrl(e) {
   p.set("usp", "pp_url");
   return FORM + "?" + p.toString();
 }
+
+// ---- Gửi ngầm vào form Google (chế độ "auto"): POST giống nút Gửi, không mở tab.
+// Google không cho đọc kết quả từ trang khác, nên chỉ biết yêu cầu đã đi hay chưa; xác nhận bằng bảng trả lời của form.
+let formFlushing = false;
+function queueForm(e) {
+  S.formQueue = S.formQueue || [];
+  const p = formParams(e);
+  p.set("fvv", "1"); p.set("pageHistory", "0,1,2,3");
+  S.formQueue.push({ id: e.id || String(e.t), body: p.toString() });
+  save(); flushForm();
+}
+async function flushForm() {
+  if (formFlushing || !S.formQueue || !S.formQueue.length) { render(); return; }
+  formFlushing = true;
+  while (S.formQueue.length) {
+    const q = S.formQueue[0];
+    try {
+      await fetch(FORM_SEND, { method: "POST", mode: "no-cors", headers: { "Content-Type": "application/x-www-form-urlencoded" }, body: q.body });
+      const e = S.log.find(x => (x.id || String(x.t)) === q.id);
+      if (e) e.formSent = Date.now();
+      S.formQueue.shift(); save();
+    } catch (err) { break; }
+  }
+  formFlushing = false; render();
+}
+window.addEventListener("online", flushForm);
+setInterval(flushForm, 30000);
 
 // ---- Báo về trưởng ca
 let flushing = false, syncState = "";
@@ -444,7 +475,7 @@ function tapSpot(area) {
     note.textContent = "Điểm này đã quét lúc " + fmt(new Date(hit.t)) + " trong vòng này. Bạn có chắc muốn quét lại?";
     note.className = "note warn";
   } else {
-    note.textContent = (S.mode === "send" ? "Bấm Xác nhận sẽ báo về trưởng ca và gửi form luôn." : "Bấm Xác nhận sẽ báo về trưởng ca và mở form điền sẵn.");
+    note.textContent = (S.mode === "auto" ? "Bấm Xác nhận sẽ báo về trưởng ca và tự gửi form ngầm, không mở tab." : S.mode === "send" ? "Bấm Xác nhận sẽ báo về trưởng ca và gửi form luôn." : "Bấm Xác nhận sẽ báo về trưởng ca và mở form điền sẵn.");
     if (S.test) note.textContent = "Chế độ thử: không báo về trưởng ca.";
     note.className = "note";
   }
@@ -458,7 +489,7 @@ function doTap(area) {
   const now = new Date();
   const bad = Array.from(document.querySelectorAll("#items input:checked")).map(i => i.value);
   const entry = {
-    pid: P().id, mode: S.mode === "send" ? "send" : "fill", skip: (S.skip[area] || []).slice(), t: now.getTime(), key: shiftKey(now), shift: shiftAt(now), round: r, area, name: P().name.trim(),
+    pid: P().id, mode: S.mode === "send" ? "send" : S.mode === "auto" ? "auto" : "fill", skip: (S.skip[area] || []).slice(), t: now.getTime(), key: shiftKey(now), shift: shiftAt(now), round: r, area, name: P().name.trim(),
     bad, t667: $("t667").value.trim(), t7: $("t7").value.trim(), t8: $("t8").value.trim()
   };
   entry.id = (S.cred ? S.cred.u : "x") + "-" + entry.t;
@@ -468,7 +499,7 @@ function doTap(area) {
   reportTap(entry);
   setAlarm(entry);
   save();
-  openUrl(buildUrl(entry));
+  if (entry.mode === "auto") { if (!entry.test) queueForm(entry); } else openUrl(buildUrl(entry));
   document.querySelectorAll("#items input").forEach(i => i.checked = false);
   ["t667", "t7", "t8"].forEach(id => $(id).value = "");
   $("issue").open = false;
@@ -558,7 +589,7 @@ function render() {
     const t = document.createElement("span"); t.className = "name"; t.textContent = disp(area);
     const s = document.createElement("small");
     const hit = L.filter(e => e.round === r && e.area === area).pop();
-    s.textContent = armed === area ? "Chạm lần nữa nếu cần làm lại" : hit ? (hit.mode === "send" ? "Đã gửi " : "Đã mở form ") + fmt(new Date(hit.t)) : "Chạm khi tới";
+    s.textContent = armed === area ? "Chạm lần nữa nếu cần làm lại" : hit ? (hit.mode === "auto" ? (hit.formSent || hit.test ? "Đã gửi ngầm " : "Chờ gửi ") : hit.mode === "send" ? "Đã gửi " : "Đã mở form ") + fmt(new Date(hit.t)) : "Chạm khi tới";
     head.append(num, s);
     b.append(head, t);
     b.addEventListener("click", () => tapSpot(area));
@@ -627,8 +658,8 @@ function buildStatic() {
     if (S.closed) delete S.closed[id + "|" + k];
     S.alarm = null; save(); render(); tickAlarm();
   });
-  $("mode").value = S.mode === "send" ? "send" : "fill";
-  const modeHint = () => { $("modeHint").textContent = S.mode === "send"
+  $("mode").value = S.mode === "send" ? "send" : S.mode === "auto" ? "auto" : "fill";
+  const modeHint = () => { $("modeHint").textContent = S.mode === "auto" ? "Chạm và xác nhận là trang tự gửi form ngầm, không mở tab nào. Trang không đọc được phản hồi của Google, nên lần đầu hãy kiểm tra bảng trả lời của form xem bản ghi đã tới chưa. Mất mạng thì tự gửi lại khi có mạng." : S.mode === "send"
     ? "Chạm là gửi ngay vào form, tab mới hiện trang xác nhận của Google. Nếu trang xác nhận không hiện hoặc bản ghi không có trong form, quay lại chế độ điền sẵn."
     : "Chạm là mở form đã điền sẵn ở tab mới, cần bấm Tiếp tới trang cuối rồi Gửi."; };
   $("mode").addEventListener("change", e => { S.mode = e.target.value; save(); modeHint(); });
