@@ -138,6 +138,15 @@ ul.log a { color: var(--accent-2); }
 .routelist input { width: 22px; height: 22px; accent-color: var(--accent-2); flex: none; }
 :root { padding-top: env(safe-area-inset-top, 0px); padding-bottom: env(safe-area-inset-bottom, 0px); }
 body { margin: 0; }
+.modal { position: fixed; inset: 0; z-index: 20; display: flex; align-items: center; justify-content: center; padding: 16px; background: rgba(8,16,12,.55); }
+.modal > div { width: 100%; max-width: 420px; background: var(--surface); color: var(--fg); border-radius: 16px; padding: 20px; box-shadow: 0 10px 40px rgba(0,0,0,.35); }
+.modal h2 { font-size: 15px; color: var(--muted); }
+.modal .big { font-family: var(--font-display); font-size: 28px; line-height: 1.15; font-weight: 700; margin: 6px 0 4px; text-transform: uppercase; overflow-wrap: anywhere; }
+.modal .note { font-size: 14px; color: var(--muted); margin: 0 0 14px; }
+.modal .note.warn { color: var(--warn); font-weight: 600; }
+.modal .btns { display: flex; gap: 10px; }
+.modal .btns .btn { flex: 1; min-height: 52px; font-size: 17px; font-weight: 600; }
+.modal .btns .ok { background: var(--accent); color: var(--accent-fg); border-color: var(--accent); }
 .sync { font-size: 13px; color: var(--muted); padding: 2px 2px 0; }
 .sync.bad { color: var(--warn); font-weight: 600; }
 </style>
@@ -238,6 +247,18 @@ body { margin: 0; }
     </div>
   </details>
 </main>
+
+<div class="modal" id="confirm" role="dialog" aria-modal="true" aria-labelledby="cfTitle" hidden>
+  <div>
+    <h2 id="cfTitle">Xác nhận đã tới điểm</h2>
+    <div class="big" id="cfArea"></div>
+    <p class="note" id="cfNote"></p>
+    <div class="btns">
+      <button class="btn" id="cfNo" type="button">Huỷ</button>
+      <button class="btn ok" id="cfYes" type="button">Xác nhận</button>
+    </div>
+  </div>
+</div>
 
 <script>
 const FORM = "https://docs.google.com/forms/d/e/1FAIpQLSc5UsxYwCLo0gJgVk2j5PDr48Nwww5BHqC4IIPkC8waJoB5vA/viewform";
@@ -400,6 +421,7 @@ function setSync() {
   else if (S.outbox.length) { el.textContent = "Chờ báo về trưởng ca: " + S.outbox.length + " lần chạm (sẽ tự gửi lại khi có mạng)"; el.classList.add("bad"); }
   else el.textContent = "Đã báo về trưởng ca";
 }
+document.addEventListener("keydown", e => { if (e.key === "Escape") $("confirm").hidden = true; });
 setInterval(flush, 30000);
 window.addEventListener("online", flush);
 
@@ -410,16 +432,29 @@ function openUrl(url) {
 }
 
 let armed = null, armTimer = null, delArmT = null, delArmTm = null;
+// Chạm một điểm: hiện hộp xác nhận trước, chỉ quét khi bấm Xác nhận.
 function tapSpot(area) {
   const { r, done } = currentRound();
   if (!P().name.trim()) { $("settings").open = true; $("name").focus(); return; }
-  if (done.has(area) && armed !== area) {
-    armed = area; render();
-    clearTimeout(armTimer); armTimer = setTimeout(() => { armed = null; render(); }, 4000);
-    return;
-  }
-  armed = null;
   unlockAudio();
+  const hit = shiftLog().filter(e => e.round === r && e.area === area).pop();
+  $("cfArea").textContent = disp(area);
+  const note = $("cfNote");
+  if (done.has(area) && hit) {
+    note.textContent = "Điểm này đã quét lúc " + fmt(new Date(hit.t)) + " trong vòng này. Bạn có chắc muốn quét lại?";
+    note.className = "note warn";
+  } else {
+    note.textContent = (S.mode === "send" ? "Bấm Xác nhận sẽ báo về trưởng ca và gửi form luôn." : "Bấm Xác nhận sẽ báo về trưởng ca và mở form điền sẵn.");
+    if (S.test) note.textContent = "Chế độ thử: không báo về trưởng ca.";
+    note.className = "note";
+  }
+  $("confirm").hidden = false;
+  $("cfYes").onclick = () => { $("confirm").hidden = true; doTap(area); };
+  $("cfNo").onclick = () => { $("confirm").hidden = true; };
+  $("cfYes").focus();
+}
+function doTap(area) {
+  const { r } = currentRound();
   const now = new Date();
   const bad = Array.from(document.querySelectorAll("#items input:checked")).map(i => i.value);
   const entry = {
@@ -539,7 +574,7 @@ function render() {
     if (e.bad && e.bad.length) { const x = document.createElement("span"); x.className = "badbadge"; x.textContent = "(" + e.bad.length + " lỗi)"; left.appendChild(x); }
     const right = document.createElement("span");
     const tm = document.createElement("time"); tm.textContent = fmt(new Date(e.t));
-    const a = document.createElement("a"); a.href = buildUrl(e); a.target = "_blank"; a.rel = "noopener noreferrer"; a.textContent = e.mode === "send" ? " gửi lại" : " mở lại";
+    const a = document.createElement("a"); a.href = buildUrl(Object.assign({}, e, { mode: "fill" })); a.target = "_blank"; a.rel = "noopener noreferrer"; a.textContent = " mở form";
     const d = document.createElement("button"); d.type = "button"; d.className = "linkbtn";
     const armedDel = delArmT === e.t;
     d.textContent = armedDel ? " chạm lại để xoá" : " xoá";
