@@ -19,7 +19,9 @@ Gồm ba phần:
 2. **Thực thi dưới tên**: Tôi. **Người có quyền truy cập**: **Bất kỳ ai**.
 3. Bấm **Triển khai**, sao chép **URL ứng dụng web** (kết thúc bằng `/exec`) và gửi cho Claude để điền vào `config.js`.
 
-## Bước 3. Điền nhân viên
+## Bước 3. Điền nhân viên (làm trực tiếp trên trang trưởng ca)
+Mở `admin.html`, mục **Nhân viên và ca trực** để thêm, sửa tên, đổi ca, tạm dừng, đổi mã, xoá và sao chép link từng người. Mục **Quy tắc báo đỏ** sửa các con số. Bảng dưới đây chỉ để tham khảo cấu trúc trang NhanVien trong Sheet.
+
 Trong Sheet, trang **NhanVien**:
 
 | id | ten | ma | ca_truc | hoat_dong |
