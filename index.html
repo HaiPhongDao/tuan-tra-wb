@@ -1,0 +1,687 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Tuần Tra West Bay</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700&family=Barlow:wght@400;500;600&display=swap">
+<style>
+/* Bố cục: đầu trang có tên + giờ; thẻ xanh đậm "vòng hiện tại" làm trọng tâm; lưới điểm tuần tra đánh số theo thứ tự đi; nhật ký và cài đặt gập lại bên dưới. */
+:root {
+  --bg: #e9ede8;
+  --surface: #fbfcfa;
+  --fg: #17211c;
+  --muted: #5a675f;
+  --line: #d2d9d1;
+  --accent: #0b5d4b;
+  --accent-2: #0f7a62;
+  --accent-fg: #ffffff;
+  --hero-fg: #ffffff;
+  --hero-dim: rgba(255,255,255,.72);
+  --seg-off: rgba(255,255,255,.22);
+  --seg-on: #8be3c3;
+  --done: #dcebe1;
+  --done-fg: #0f5240;
+  --warn: #b24b12;
+  --warn-bg: #f9e3d2;
+  --shadow: 0 1px 2px rgba(20,40,30,.10), 0 4px 14px rgba(20,40,30,.07);
+  --font-display: "Barlow Condensed", "Arial Narrow", sans-serif;
+  --font-body: "Barlow", system-ui, sans-serif;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0e1411; --surface: #18211c; --fg: #e6ece7; --muted: #96a69c; --line: #2a362f;
+    --accent: #1b6f5a; --accent-2: #2a8a71; --accent-fg: #f3fbf7; --hero-fg: #f3fbf7; --hero-dim: rgba(243,251,247,.7);
+    --seg-off: rgba(255,255,255,.16); --seg-on: #7be0bd; --done: #1c3328; --done-fg: #9fe3c8;
+    --warn: #f2a677; --warn-bg: #3b2616; --shadow: 0 1px 2px rgba(0,0,0,.5); color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0e1411; --surface: #18211c; --fg: #e6ece7; --muted: #96a69c; --line: #2a362f;
+  --accent: #1b6f5a; --accent-2: #2a8a71; --accent-fg: #f3fbf7; --hero-fg: #f3fbf7; --hero-dim: rgba(243,251,247,.7);
+  --seg-off: rgba(255,255,255,.16); --seg-on: #7be0bd; --done: #1c3328; --done-fg: #9fe3c8;
+  --warn: #f2a677; --warn-bg: #3b2616; --shadow: 0 1px 2px rgba(0,0,0,.5); color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body {
+  background: var(--bg); color: var(--fg); font-family: var(--font-body); font-size: 16px; line-height: 1.4;
+  padding-block: 14px 48px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+}
+main { max-width: 520px; margin: 0 auto; display: flex; flex-direction: column; gap: 14px; }
+h1, h2, h3 { font-family: var(--font-display); font-weight: 700; margin: 0; letter-spacing: .03em; text-transform: uppercase; }
+h1 { font-size: 22px; line-height: 1.1; }
+h2 { font-size: 15px; color: var(--muted); }
+h3 { font-size: 14px; color: var(--accent-2); margin-top: 22px; padding-bottom: 6px; border-bottom: 1px solid var(--line); }
+button { font: inherit; color: inherit; cursor: pointer; -webkit-tap-highlight-color: transparent; }
+:focus-visible { outline: 3px solid var(--accent-2); outline-offset: 2px; }
+[hidden] { display: none !important; }
+
+.top { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.top .titles { min-width: 0; }
+.top .sub { font-size: 13px; color: var(--muted); margin-top: 2px; }
+.clock { font-family: var(--font-display); font-size: 34px; line-height: 1; font-variant-numeric: tabular-nums; }
+.who { display: flex; gap: 8px; align-items: center; }
+.who select { flex: 1 1 auto; min-width: 0; font-weight: 600; }
+.iconbtn { flex: none; width: 44px; height: 44px; border-radius: 10px; border: 1px solid var(--line); background: var(--surface); font-size: 22px; line-height: 1; }
+
+.alarm { position: sticky; top: env(safe-area-inset-top, 0px); z-index: 5; display: flex; justify-content: space-between; align-items: center; gap: 10px; background: var(--surface); border: 2px solid var(--accent-2); border-radius: 12px; padding: 12px 14px; box-shadow: var(--shadow); }
+.alarmtxt { display: flex; flex-direction: column; min-width: 0; }
+.alarmtxt b { font-family: var(--font-display); font-size: 22px; line-height: 1.15; overflow-wrap: anywhere; }
+.alarmtxt span { font-size: 14px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.alarm.ringing { background: var(--warn-bg); border-color: var(--warn); }
+.alarm.ringing b { color: var(--warn); }
+@media (prefers-reduced-motion: no-preference) { .alarm.ringing { animation: pulse 1s ease-in-out infinite; } }
+@keyframes pulse { 50% { opacity: .7; } }
+
+.hero { background: linear-gradient(160deg, var(--accent-2), var(--accent)); color: var(--hero-fg); border-radius: 16px; padding: 16px; box-shadow: var(--shadow); }
+.status { display: grid; grid-template-columns: 1.1fr 1fr 1fr; gap: 10px; }
+.status > div { min-width: 0; }
+.status b { display: block; font-family: var(--font-display); font-size: 40px; line-height: 1; font-variant-numeric: tabular-nums; }
+.status span { display: block; margin-top: 4px; font-size: 12px; color: var(--hero-dim); text-transform: uppercase; letter-spacing: .07em; }
+.status .late b { color: #ffd0b0; }
+.segs { display: flex; gap: 5px; margin-top: 14px; }
+.segs i { flex: 1; height: 8px; border-radius: 4px; background: var(--seg-off); }
+.segs i.on { background: var(--seg-on); }
+.heroline { margin-top: 10px; font-size: 14px; color: var(--hero-dim); display: flex; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+
+.sectionhead { display: flex; justify-content: space-between; align-items: baseline; margin: 4px 2px 8px; }
+.grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.spot {
+  position: relative; min-height: 96px; padding: 12px; text-align: left; border-radius: 14px;
+  border: 2px solid var(--line); background: var(--surface); color: var(--fg); box-shadow: var(--shadow);
+  display: flex; flex-direction: column; justify-content: space-between; gap: 8px;
+  font-weight: 600; font-size: 15px; line-height: 1.2; overflow-wrap: anywhere;
+}
+.spot:active { transform: scale(.98); }
+.spot .num { flex: none; width: 26px; height: 26px; border-radius: 50%; display: grid; place-items: center; font-family: var(--font-display); font-size: 15px; background: var(--accent); color: var(--accent-fg); }
+.spot .head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.spot .name { min-width: 0; display: block; }
+.spot small { display: block; text-align: right; font-weight: 500; font-size: 13px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.spot.next { border-color: var(--accent-2); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent-2) 25%, transparent), var(--shadow); }
+.spot.done { background: var(--done); border-color: transparent; color: var(--done-fg); box-shadow: none; }
+.spot.done .num { background: var(--done-fg); color: var(--done); }
+.spot.done small { color: var(--done-fg); }
+.spot.armed { background: var(--warn-bg); color: var(--warn); border-color: var(--warn); }
+.spot.armed small { color: var(--warn); }
+
+.panel { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 14px; box-shadow: var(--shadow); }
+details.panel > summary { list-style: none; cursor: pointer; font-weight: 600; display: flex; justify-content: space-between; align-items: center; gap: 8px; min-height: 28px; }
+details.panel > summary::-webkit-details-marker { display: none; }
+details.panel > summary::after { content: "▾"; color: var(--muted); transition: transform .15s; }
+details.panel[open] > summary::after { transform: rotate(180deg); }
+details.panel[open] > summary { margin-bottom: 6px; }
+.items { display: grid; gap: 0; }
+.items label { display: flex; gap: 12px; align-items: center; padding: 10px 0; border-bottom: 1px solid var(--line); }
+.items input { width: 24px; height: 24px; accent-color: var(--warn); flex: none; }
+textarea, input[type=text], select { width: 100%; min-height: 44px; font: inherit; color: var(--fg); background: var(--bg); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; }
+textarea { min-height: 76px; resize: vertical; }
+.field { display: flex; flex-direction: column; gap: 5px; margin-top: 12px; }
+.field > span { font-size: 13px; color: var(--muted); }
+.hint { font-size: 13px; color: var(--muted); margin: 8px 0 0; }
+
+ul.log { list-style: none; margin: 8px 0 0; padding: 0; }
+ul.log li { display: flex; justify-content: space-between; gap: 10px; padding: 10px 0; border-bottom: 1px solid var(--line); font-size: 14px; }
+ul.log li > span { min-width: 0; overflow-wrap: anywhere; }
+ul.log li > span:last-child { flex: none; text-align: right; }
+ul.log time { font-variant-numeric: tabular-nums; font-weight: 600; margin-right: 4px; }
+ul.log a { color: var(--accent-2); }
+.linkbtn { background: none; border: 0; padding: 6px 0 6px 8px; color: var(--warn); text-decoration: underline; font-size: 14px; }
+.badbadge { color: var(--warn); font-weight: 600; }
+.row { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
+.btn { min-height: 44px; padding: 10px 16px; border-radius: 10px; border: 1px solid var(--line); background: var(--surface); font-weight: 500; }
+.btn.danger { color: var(--warn); border-color: var(--warn); }
+.routelist { display: grid; gap: 0; max-height: 320px; overflow-y: auto; border: 1px solid var(--line); border-radius: 10px; padding: 0 12px; }
+.routelist label { display: flex; gap: 12px; align-items: center; padding: 10px 0; font-size: 14px; border-bottom: 1px solid var(--line); }
+.routelist label:last-child { border-bottom: 0; }
+.routelist input { width: 22px; height: 22px; accent-color: var(--accent-2); flex: none; }
+:root { padding-top: env(safe-area-inset-top, 0px); padding-bottom: env(safe-area-inset-bottom, 0px); }
+body { margin: 0; }
+.sync { font-size: 13px; color: var(--muted); padding: 2px 2px 0; }
+.sync.bad { color: var(--warn); font-weight: 600; }
+</style>
+<script src="config.js"></script>
+</head>
+<body>
+
+<main>
+  <div class="top">
+    <div class="titles">
+      <h1>Tuần tra West Bay</h1>
+      <div class="sub" id="shiftLine"></div>
+    </div>
+    <div class="clock" id="clock">--:--</div>
+  </div>
+
+  <div class="who">
+    <select id="prof" aria-label="Đang tuần cho"></select>
+    <button class="iconbtn" id="addProf" type="button" aria-label="Thêm người" title="Thêm người">+</button>
+  </div>
+
+  <div class="sync" id="sync" hidden></div>
+
+  <section class="alarm" id="alarm" aria-live="polite" hidden>
+    <div class="alarmtxt"><b id="alarmTitle"></b><span id="alarmSub"></span></div>
+    <button class="btn" id="alarmOff" type="button">Tắt nhắc</button>
+  </section>
+
+  <section class="hero" aria-label="Vòng hiện tại">
+    <div class="status">
+      <div id="stRound"><b>-</b><span>Vòng</span></div>
+      <div id="stSpots"><b>-</b><span>Điểm</span></div>
+      <div id="stNext"><b>-</b><span>Vòng kế tiếp</span></div>
+    </div>
+    <div class="segs" id="segs"></div>
+    <div class="heroline"><span id="whoLine"></span></div>
+  </section>
+
+  <section>
+    <div class="sectionhead"><h2>Điểm tuần tra</h2></div>
+    <div class="grid" id="grid"></div>
+    <p class="hint">Chạm một điểm khi đã tới nơi. Giờ lấy theo đồng hồ máy lúc chạm. Form Google mở ở tab mới, tuỳ chế độ trong Cài đặt: điền sẵn để bạn tự bấm Gửi, hoặc gửi luôn.</p>
+  </section>
+
+  <details class="panel" id="issue">
+    <summary>Có bất thường ở điểm này</summary>
+    <div class="items" id="items"></div>
+    <label class="field"><span>Lỗi hạng mục 6.6.7 (tủ điện, đèn, nắp cống, cây xanh, vỉa hè)</span><textarea id="t667"></textarea></label>
+    <label class="field"><span>7. Kết luận (để trống thì gửi "An ninh an toàn")</span><textarea id="t7"></textarea></label>
+    <label class="field"><span>8. Việc phát sinh (ghi rõ thời gian, sự việc)</span><textarea id="t8"></textarea></label>
+    <p class="hint">Ghi ở đây rồi chạm điểm tuần tra. Sau khi mở form, ô này tự xoá.</p>
+  </details>
+
+  <details class="panel" id="logbox" open>
+    <summary>Nhật ký ca này</summary>
+    <ul class="log" id="log"></ul>
+    <div class="row"><button class="btn" id="newRound" type="button">Bắt đầu vòng mới</button><button class="btn danger" id="clearShift" type="button">Xoá hết nhật ký ca này</button></div>
+  </details>
+
+  <details class="panel" id="settings">
+    <summary>Cài đặt</summary>
+
+    <h3>Người đi tuần</h3>
+    <label class="field"><span>Họ tên người thực hiện</span><input type="text" id="name" autocomplete="name"></label>
+    <label class="field"><span>Ca trực</span>
+      <select id="shift"><option value="auto">Tự nhận theo giờ (06:00–17:59 là Ca Ngày)</option><option>Ca Ngày</option><option>Ca Đêm</option></select>
+    </label>
+    <div class="row"><button class="btn danger" id="delProf" type="button">Xoá hồ sơ này</button></div>
+    <p class="hint">Mỗi hồ sơ có tên, ca, tuyến và số vòng riêng. Chỉ ghi cho người thật sự đã đi tuần điểm đó.</p>
+
+    <h3>Báo về trưởng ca</h3>
+    <label class="field"><span>Chế độ thử</span>
+      <select id="testMode"><option value="0">Tắt: mỗi lần chạm báo về trưởng ca</option><option value="1">Bật: chạm thử, không báo về</option></select>
+    </label>
+    <p class="hint">Mỗi lần chạm, trang báo giờ và điểm về trưởng ca. Bật chế độ thử khi chỉ để tập dùng, nhớ tắt lại trước khi đi tuần thật.</p>
+
+    <h3>Gửi form</h3>
+    <label class="field"><span>Khi chạm một điểm</span>
+      <select id="mode"><option value="fill">Chỉ điền sẵn form, tôi tự bấm Gửi</option><option value="send">Gửi luôn, không cần bấm Gửi</option></select>
+    </label>
+    <p class="hint" id="modeHint"></p>
+    <p class="hint">Mặc định mỗi lần chạm điền sẵn "An ninh đảm bảo" và "Đạt" cho mọi hạng mục. Chỉ chạm khi bạn đã kiểm tra, và dùng ô "Có bất thường" khi có lỗi.</p>
+
+    <h3>Vòng và nhắc giờ</h3>
+    <label class="field"><span>Số vòng tối thiểu mỗi ca</span><input type="text" inputmode="numeric" id="minRounds"></label>
+    <label class="field"><span>Phút giữa hai vòng</span><input type="text" inputmode="numeric" id="gap"></label>
+    <label class="field"><span>Nhắc quay lại bấm sau mấy phút (0 = tắt)</span><input type="text" inputmode="numeric" id="remind"></label>
+    <div class="row"><button class="btn" id="testBeep" type="button">Thử chuông</button></div>
+
+    <h3>Tuyến tuần tra</h3>
+    <div class="field"><span>Các điểm trong tuyến, theo thứ tự chạm</span><div class="routelist" id="routeList"></div></div>
+
+    <h3>Hạng mục không áp dụng</h3>
+    <div class="field"><span>Chọn vị trí, rồi tích mục bỏ qua (không điền, để trống trong form)</span>
+      <select id="skipArea" aria-label="Vị trí"></select>
+      <div class="items" id="skipItems"></div>
+      <div class="hint" id="skipSummary"></div>
+    </div>
+  </details>
+</main>
+
+<script>
+const FORM = "https://docs.google.com/forms/d/e/1FAIpQLSc5UsxYwCLo0gJgVk2j5PDr48Nwww5BHqC4IIPkC8waJoB5vA/viewform";
+const FORM_SEND = FORM.replace("viewform", "formResponse");
+const AREAS = ["BỂ BƠI WEST BAY","Tùy chọn 2","MẶT SAU THÁP A WB","BÃI XE HẦM THÁP B WB","MẶT SAU THÁP B WB","LỐI VÀO HẦM CLB WB","BÃI XE HẦM C WB","BÃI XE HẦM D WB","MẶT SAU THÁP C WB","LỐI VÀO TẦNG 01 NHÀ XE AB WB","TẦNG MÁI NHÀ XE AB","LỐI RA TẦNG 01 NHÀ XE AB WB","LỐI VÀO TẦNG 01 NHÀ XE CD WB","TẦNG MÁI NHÀ XE CD","LỐI RA TẦNG 01 NHÀ XE CD","TẦNG 12 THÁP A","TẦNG MÁI THÁP A","TẦNG 12 THÁP B","TẦNG MÁI THÁP B","TẦNG 12 THÁP C","TẦNG MÁI THÁP C","TẦNG 12 THÁP D","TẦNG MÁI THÁP D"];
+const ITEMS = [
+  {id:"1681079203", label:"6.1 An ninh trật tự", ok:"An ninh đảm bảo", bad:"Chưa đảm bảo", required:true},
+  {id:"445475952", label:"6.2 Bình chữa cháy", required:true},
+  {id:"686659180", label:"6.3 Trụ cứu hỏa"},
+  {id:"2014557785", label:"6.4 Hệ thống PCCC trong tòa nhà"},
+  {id:"32202274", label:"6.5 Vệ sinh chòi chốt/Phòng camera"},
+  {id:"230453167", label:"6.6.1 Trụ và thanh barie"},
+  {id:"840785650", label:"6.6.2 Nút điều khiển barie"},
+  {id:"1604947835", label:"6.6.3 Mắt camera"},
+  {id:"2096478009", label:"6.6.4 Đầu ghi camera"},
+  {id:"115933417", label:"6.6.5 Màn hình camera"},
+  {id:"1828766863", label:"6.6.6 Bảng/biển công cộng"}
+];
+const DEFAULT_ROUTE = ["Tùy chọn 2","MẶT SAU THÁP A WB","BÃI XE HẦM THÁP B WB","MẶT SAU THÁP B WB","LỐI VÀO HẦM CLB WB","BÃI XE HẦM C WB","BÃI XE HẦM D WB","MẶT SAU THÁP C WB"];
+const KEY = "tuantra_west_bay_v1";
+const $ = id => document.getElementById(id);
+const disp = a => a === "Tùy chọn 2" ? "BÃI XE HẦM A (Tùy chọn 2)" : a;
+const pad = n => String(n).padStart(2, "0");
+
+function newProfile(name) {
+  return { id: "p" + Date.now().toString(36) + Math.floor(Math.random() * 1000), name: name || "", shift: "auto", minRounds: 6, gap: 90, route: DEFAULT_ROUTE.slice() };
+}
+let S = { v: 2, active: "", profiles: [], log: [], closed: {}, skip: {} };
+try {
+  const raw = localStorage.getItem(KEY);
+  if (raw) {
+    const o = JSON.parse(raw);
+    if (o.v === 2) S = o;
+    else {
+      // Bản cũ: một người. Chuyển thành hồ sơ đầu tiên và thêm "Tùy chọn 2" (hầm A) nếu thiếu.
+      const p = newProfile(o.name);
+      p.shift = o.shift || "auto"; p.minRounds = o.minRounds || 6; p.gap = o.gap || 90;
+      p.route = (o.route || DEFAULT_ROUTE).slice();
+      if (p.route.indexOf("Tùy chọn 2") < 0) p.route.unshift("Tùy chọn 2");
+      S.profiles = [p]; S.active = p.id;
+      S.log = (o.log || []).map(e => Object.assign({ pid: p.id }, e));
+      S.closed = {};
+    }
+  }
+} catch (e) {}
+if (!S.skip) S.skip = {};
+// Mặc định theo yêu cầu: tầng 12 và tầng mái tháp A-D gửi 4 mục đầu (6.1-6.4); mọi vị trí khác chỉ gửi 2 mục bắt buộc (6.1, 6.2).
+if (!S.skipInit) {
+  const tower = a => /^TẦNG (12|MÁI) THÁP [ABCD]$/.test(a);
+  const ids = ITEMS.filter(it => !it.required).map(it => it.id);
+  S.skip = {};
+  AREAS.forEach(a => { S.skip[a] = tower(a) ? ids.slice(2) : ids.slice(); });
+  S.skipInit = true;
+  save();
+}
+if (!S.profiles.length) { const p = newProfile(""); S.profiles = [p]; S.active = p.id; }
+if (!S.outbox) S.outbox = [];
+// Link nhân viên dạng ?u=mã-nv&k=mã-bí-mật&n=Họ+tên. Lưu lại rồi xoá khỏi thanh địa chỉ.
+(function () {
+  try {
+    const q = new URLSearchParams(location.search);
+    const u = q.get("u"), k = q.get("k"), n = q.get("n");
+    if (u && k) { S.cred = { u: u, k: k, n: n || u }; localStorage.setItem(KEY, JSON.stringify(S)); history.replaceState(null, "", location.pathname); }
+  } catch (e) {}
+})();
+if (S.cred) { S.profiles = [S.profiles.find(x => x.id === S.active) || S.profiles[0]]; S.active = S.profiles[0].id; S.profiles[0].name = S.cred.n; }
+const CFG = window.TUANTRA || {};
+function P() { return S.profiles.find(x => x.id === S.active) || S.profiles[0]; }
+function save() { try { localStorage.setItem(KEY, JSON.stringify(S)); } catch (e) {} }
+
+function shiftAt(d) {
+  if (P().shift !== "auto") return P().shift;
+  const h = d.getHours();
+  return h >= 6 && h < 18 ? "Ca Ngày" : "Ca Đêm";
+}
+// Khoá ca: ca đêm sau 00:00 vẫn tính về ngày hôm trước.
+function shiftKey(d) {
+  const s = shiftAt(d);
+  const day = new Date(d);
+  if (s === "Ca Đêm" && d.getHours() < 18) day.setDate(day.getDate() - 1);
+  return day.getFullYear() + "-" + pad(day.getMonth() + 1) + "-" + pad(day.getDate()) + "|" + s;
+}
+function shiftLog() { const k = shiftKey(new Date()); return S.log.filter(e => e.key === k && e.pid === P().id); }
+
+function currentRound() {
+  const L = shiftLog();
+  const closed = (S.closed && S.closed[P().id + "|" + shiftKey(new Date())]) || 0;
+  let r = 1;
+  L.forEach(e => { if (e.round > r) r = e.round; });
+  if (closed >= r) return { r: closed + 1, done: new Set() };
+  const done = new Set(L.filter(e => e.round === r).map(e => e.area));
+  if (P().route.length && P().route.every(a => done.has(a))) return { r: r + 1, done: new Set() };
+  return { r, done };
+}
+
+function buildUrl(e) {
+  const d = new Date(e.t);
+  const p = new URLSearchParams();
+  p.set("entry.1183981718", e.name);
+  p.set("entry.1788869125_year", d.getFullYear());
+  p.set("entry.1788869125_month", d.getMonth() + 1);
+  p.set("entry.1788869125_day", d.getDate());
+  p.set("entry.796213522_hour", d.getHours());
+  p.set("entry.796213522_minute", d.getMinutes());
+  p.set("entry.240581832", e.shift);
+  p.set("entry.2125090822", e.area);
+  ITEMS.forEach(it => {
+    const bad = e.bad && e.bad.indexOf(it.id) >= 0;
+    const skip = !it.required && !bad && (e.skip || []).indexOf(it.id) >= 0;
+    if (skip) return;
+    p.set("entry." + it.id, bad ? (it.bad || "Chưa đạt") : (it.ok || "Đạt"));
+  });
+  if (e.t667) p.set("entry.1932488576", e.t667);
+  p.set("entry.2016413647", e.t7 || "An ninh an toàn");
+  if (e.t8) p.set("entry.696980332", e.t8);
+  if (e.mode === "send") {
+    // Form có 4 trang nên phải khai báo đủ lịch sử trang thì Google mới nhận như đã bấm Gửi ở trang cuối.
+    p.set("fvv", "1"); p.set("pageHistory", "0,1,2,3"); p.set("submit", "Submit");
+    return FORM_SEND + "?" + p.toString();
+  }
+  p.set("usp", "pp_url");
+  return FORM + "?" + p.toString();
+}
+
+// ---- Báo về trưởng ca
+let flushing = false, syncState = "";
+function reportTap(e) {
+  if (!S.cred || e.test) return;
+  S.outbox.push({ action: "tap", u: S.cred.u, k: S.cred.k, id: e.id, t: e.t, area: e.area, round: e.round, shift: e.shift, route: JSON.stringify(P().route) });
+  save(); flush();
+}
+function reportCancel(e) {
+  if (!S.cred || e.test || !e.id) return;
+  S.outbox.push({ action: "cancel", u: S.cred.u, k: S.cred.k, id: e.id });
+  save(); flush();
+}
+async function flush() {
+  if (flushing || !S.cred || !CFG.SCRIPT_URL) { setSync(); return; }
+  flushing = true; syncState = "";
+  while (S.outbox.length) {
+    const p = S.outbox[0];
+    try {
+      const r = await fetch(CFG.SCRIPT_URL + "?" + new URLSearchParams(p).toString(), { cache: "no-store" });
+      const j = await r.json();
+      if (j.ok || j.err === "dup" || j.err === "missing") { S.outbox.shift(); save(); }
+      else if (j.err === "key") { syncState = "key"; break; }
+      else { syncState = "net"; break; }
+    } catch (err) { syncState = "net"; break; }
+  }
+  flushing = false; setSync();
+}
+function setSync() {
+  const el = $("sync");
+  if (!el) return;
+  if (!S.cred) { el.hidden = true; return; }
+  el.hidden = false; el.classList.remove("bad");
+  if (!CFG.SCRIPT_URL) { el.textContent = "Chưa nối với trưởng ca"; el.classList.add("bad"); }
+  else if (S.test) el.textContent = "Chế độ thử: không báo về trưởng ca";
+  else if (syncState === "key") { el.textContent = "Mã nhân viên không hợp lệ, báo trưởng ca"; el.classList.add("bad"); }
+  else if (S.outbox.length) { el.textContent = "Chờ báo về trưởng ca: " + S.outbox.length + " lần chạm (sẽ tự gửi lại khi có mạng)"; el.classList.add("bad"); }
+  else el.textContent = "Đã báo về trưởng ca";
+}
+setInterval(flush, 30000);
+window.addEventListener("online", flush);
+
+function openUrl(url) {
+  const a = document.createElement("a");
+  a.href = url; a.target = "_blank"; a.rel = "noopener noreferrer";
+  document.body.appendChild(a); a.click(); a.remove();
+}
+
+let armed = null, armTimer = null, delArmT = null, delArmTm = null;
+function tapSpot(area) {
+  const { r, done } = currentRound();
+  if (!P().name.trim()) { $("settings").open = true; $("name").focus(); return; }
+  if (done.has(area) && armed !== area) {
+    armed = area; render();
+    clearTimeout(armTimer); armTimer = setTimeout(() => { armed = null; render(); }, 4000);
+    return;
+  }
+  armed = null;
+  unlockAudio();
+  const now = new Date();
+  const bad = Array.from(document.querySelectorAll("#items input:checked")).map(i => i.value);
+  const entry = {
+    pid: P().id, mode: S.mode === "send" ? "send" : "fill", skip: (S.skip[area] || []).slice(), t: now.getTime(), key: shiftKey(now), shift: shiftAt(now), round: r, area, name: P().name.trim(),
+    bad, t667: $("t667").value.trim(), t7: $("t7").value.trim(), t8: $("t8").value.trim()
+  };
+  entry.id = (S.cred ? S.cred.u : "x") + "-" + entry.t;
+  if (S.test) entry.test = true;
+  S.log.push(entry);
+  S.log = S.log.slice(-400);
+  reportTap(entry);
+  setAlarm(entry);
+  save();
+  openUrl(buildUrl(entry));
+  document.querySelectorAll("#items input").forEach(i => i.checked = false);
+  ["t667", "t7", "t8"].forEach(id => $(id).value = "");
+  $("issue").open = false;
+  render();
+}
+
+const remindMin = () => { const m = P().remind; return m === undefined ? 3 : m; };
+let actx = null, lastBeep = 0;
+function unlockAudio() {
+  try {
+    actx = actx || new (window.AudioContext || window.webkitAudioContext)();
+    if (actx.state === "suspended") actx.resume();
+  } catch (e) {}
+}
+function beep() {
+  try { navigator.vibrate && navigator.vibrate([400, 150, 400, 150, 400]); } catch (e) {}
+  if (!actx) return;
+  for (let i = 0; i < 3; i++) {
+    const o = actx.createOscillator(), g = actx.createGain();
+    o.type = "square"; o.frequency.value = i % 2 ? 660 : 880;
+    const t0 = actx.currentTime + i * 0.35;
+    g.gain.setValueAtTime(0.0001, t0); g.gain.exponentialRampToValueAtTime(0.4, t0 + 0.02); g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.28);
+    o.connect(g); g.connect(actx.destination); o.start(t0); o.stop(t0 + 0.3);
+  }
+}
+function setAlarm(entry) {
+  const m = remindMin();
+  if (!(m > 0)) { S.alarm = null; return; }
+  const done = new Set(shiftLog().filter(e => e.round === entry.round).map(e => e.area));
+  const next = P().route.find(a => !done.has(a));
+  S.alarm = next ? { pid: P().id, who: P().name, due: entry.t + m * 60000, next, start: 0 } : null;
+}
+function tickAlarm() {
+  const box = $("alarm"), a = S.alarm;
+  if (!a) { box.hidden = true; return; }
+  const now = Date.now(), left = a.due - now;
+  box.hidden = false;
+  if (left > 0) {
+    box.classList.remove("ringing");
+    $("alarmTitle").textContent = "Điểm kế: " + disp(a.next);
+    const sec = Math.ceil(left / 1000);
+    $("alarmSub").textContent = (a.who ? a.who + " · " : "") + "nhắc sau " + Math.floor(sec / 60) + ":" + pad(sec % 60);
+  } else {
+    box.classList.add("ringing");
+    if (!a.start) { a.start = now; save(); }
+    $("alarmTitle").textContent = "Đến giờ: " + disp(a.next);
+    $("alarmSub").textContent = (a.who ? a.who + " · " : "") + "trễ " + Math.floor((now - a.due) / 60000) + " phút";
+    if (now - a.start < 120000 && now - lastBeep > 4000) { lastBeep = now; beep(); }
+  }
+}
+function fmt(d) { return pad(d.getHours()) + ":" + pad(d.getMinutes()); }
+
+function render() {
+  const now = new Date();
+  $("clock").textContent = fmt(now);
+  const { r, done } = currentRound();
+  const L = shiftLog();
+  const finishedRounds = r - 1;
+  $("stRound").innerHTML = "<b>" + r + "/" + P().minRounds + "</b><span>Vòng</span>";
+  $("stSpots").innerHTML = "<b>" + done.size + "/" + P().route.length + "</b><span>Điểm vòng này</span>";
+  const segs = $("segs"); segs.textContent = "";
+  P().route.forEach(a => { const i = document.createElement("i"); if (done.has(a)) i.className = "on"; segs.appendChild(i); });
+  // Vòng kế tiếp tính từ lần chạm đầu tiên của vòng vừa xong.
+  const prev = L.filter(e => e.round === r - 1);
+  const start = r > 1 && prev.length ? Math.min.apply(null, prev.map(e => e.t)) : null;
+  const nextEl = $("stNext");
+  nextEl.classList.remove("late");
+  if (start == null) {
+    nextEl.innerHTML = "<b>--</b><span>Vòng kế tiếp</span>";
+  } else {
+    const due = start + P().gap * 60000;
+    const mins = Math.round((due - now.getTime()) / 60000);
+    if (mins >= 0) nextEl.innerHTML = "<b>" + fmt(new Date(due)) + "</b><span>Còn " + mins + " phút</span>";
+    else { nextEl.classList.add("late"); nextEl.innerHTML = "<b>" + fmt(new Date(due)) + "</b><span>Trễ " + (-mins) + " phút</span>"; }
+  }
+  $("whoLine").textContent = P().name.trim() || "Chưa nhập họ tên, mở Cài đặt";
+  $("shiftLine").textContent = shiftAt(now) + " · " + finishedRounds + " vòng đã xong";
+
+  const grid = $("grid"); grid.textContent = "";
+  const nextArea = P().route.find(a => !done.has(a));
+  P().route.forEach((area, idx) => {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.className = "spot" + (done.has(area) ? " done" : "") + (armed === area ? " armed" : "") + (area === nextArea && armed !== area ? " next" : "");
+    const head = document.createElement("span"); head.className = "head";
+    const num = document.createElement("span"); num.className = "num"; num.textContent = done.has(area) ? "✓" : String(idx + 1);
+    const t = document.createElement("span"); t.className = "name"; t.textContent = disp(area);
+    const s = document.createElement("small");
+    const hit = L.filter(e => e.round === r && e.area === area).pop();
+    s.textContent = armed === area ? "Chạm lần nữa nếu cần làm lại" : hit ? (hit.mode === "send" ? "Đã gửi " : "Đã mở form ") + fmt(new Date(hit.t)) : "Chạm khi tới";
+    head.append(num, s);
+    b.append(head, t);
+    b.addEventListener("click", () => tapSpot(area));
+    grid.appendChild(b);
+  });
+
+  const log = $("log"); log.textContent = "";
+  if (!L.length) { const li = document.createElement("li"); li.textContent = "Chưa có lần tuần tra nào trong ca này."; log.appendChild(li); }
+  L.slice().reverse().slice(0, 40).forEach(e => {
+    const li = document.createElement("li");
+    const left = document.createElement("span");
+    left.textContent = "V" + e.round + " · " + disp(e.area) + " ";
+    if (e.bad && e.bad.length) { const x = document.createElement("span"); x.className = "badbadge"; x.textContent = "(" + e.bad.length + " lỗi)"; left.appendChild(x); }
+    const right = document.createElement("span");
+    const tm = document.createElement("time"); tm.textContent = fmt(new Date(e.t));
+    const a = document.createElement("a"); a.href = buildUrl(e); a.target = "_blank"; a.rel = "noopener noreferrer"; a.textContent = e.mode === "send" ? " gửi lại" : " mở lại";
+    const d = document.createElement("button"); d.type = "button"; d.className = "linkbtn";
+    const armedDel = delArmT === e.t;
+    d.textContent = armedDel ? " chạm lại để xoá" : " xoá";
+    d.addEventListener("click", () => {
+      if (delArmT !== e.t) { delArmT = e.t; clearTimeout(delArmTm); delArmTm = setTimeout(() => { delArmT = null; render(); }, 4000); render(); return; }
+      reportCancel(e);
+      S.log = S.log.filter(x => !(x.t === e.t && x.pid === e.pid));
+      delArmT = null; S.alarm = null; save(); render(); tickAlarm();
+    });
+    right.append(tm, a, d);
+    li.append(left, right);
+    log.appendChild(li);
+  });
+}
+
+function buildStatic() {
+  const items = $("items");
+  ITEMS.forEach(it => {
+    const l = document.createElement("label");
+    const c = document.createElement("input"); c.type = "checkbox"; c.value = it.id; c.id = "bad_" + it.id;
+    const s = document.createElement("span"); s.textContent = it.label + " — " + (it.bad || "Chưa đạt");
+    l.append(c, s); items.appendChild(l);
+  });
+  const rl = $("routeList");
+  AREAS.forEach((a, i) => {
+    const l = document.createElement("label");
+    const c = document.createElement("input"); c.type = "checkbox"; c.checked = P().route.indexOf(a) >= 0; c.id = "route_" + i;
+    c.addEventListener("change", () => {
+      if (c.checked) P().route.push(a); else P().route = P().route.filter(x => x !== a);
+      save(); render();
+    });
+    const s = document.createElement("span"); s.textContent = disp(a);
+    l.append(c, s); rl.appendChild(l);
+  });
+  AREAS.forEach(a => { const o = document.createElement("option"); o.value = a; o.textContent = disp(a); $("skipArea").appendChild(o); });
+  $("skipArea").addEventListener("change", skipRefresh);
+  skipRefresh();
+  let clrArm = null;
+  $("clearShift").addEventListener("click", () => {
+    const b = $("clearShift");
+    if (!clrArm) {
+      b.textContent = "Chạm lại để xoá hết";
+      clrArm = setTimeout(() => { clrArm = null; b.textContent = "Xoá hết nhật ký ca này"; }, 4000);
+      return;
+    }
+    clearTimeout(clrArm); clrArm = null; b.textContent = "Xoá hết nhật ký ca này";
+    const k = shiftKey(new Date()), id = P().id;
+    S.log.filter(e => e.key === k && e.pid === id).forEach(reportCancel);
+    S.log = S.log.filter(e => !(e.key === k && e.pid === id));
+    if (S.closed) delete S.closed[id + "|" + k];
+    S.alarm = null; save(); render(); tickAlarm();
+  });
+  $("mode").value = S.mode === "send" ? "send" : "fill";
+  const modeHint = () => { $("modeHint").textContent = S.mode === "send"
+    ? "Chạm là gửi ngay vào form, tab mới hiện trang xác nhận của Google. Nếu trang xác nhận không hiện hoặc bản ghi không có trong form, quay lại chế độ điền sẵn."
+    : "Chạm là mở form đã điền sẵn ở tab mới, cần bấm Tiếp tới trang cuối rồi Gửi."; };
+  $("mode").addEventListener("change", e => { S.mode = e.target.value; save(); modeHint(); });
+  modeHint();
+  $("testMode").value = S.test ? "1" : "0";
+  $("testMode").addEventListener("change", e => { S.test = e.target.value === "1"; save(); setSync(); });
+  if (S.cred) {
+    $("prof").parentElement.hidden = true;
+    $("name").readOnly = true;
+    $("delProf").hidden = true;
+  }
+  $("alarmOff").addEventListener("click", () => { S.alarm = null; save(); tickAlarm(); });
+  $("testBeep").addEventListener("click", () => { unlockAudio(); beep(); });
+  $("remind").addEventListener("input", e => { const n = parseInt(e.target.value, 10); if (n >= 0) { P().remind = n; save(); } });
+  $("name").addEventListener("input", e => { P().name = e.target.value; save(); fillProf(); render(); });
+  $("prof").addEventListener("change", e => { S.active = e.target.value; armed = null; save(); loadProfileUI(); render(); });
+  $("addProf").addEventListener("click", () => {
+    const p = newProfile(""); S.profiles.push(p); S.active = p.id; save();
+    loadProfileUI(); render(); $("settings").open = true; $("name").focus();
+  });
+  let delArm = null;
+  $("delProf").addEventListener("click", () => {
+    const btn = $("delProf");
+    if (S.profiles.length < 2) { btn.textContent = "Cần giữ ít nhất 1 hồ sơ"; setTimeout(() => btn.textContent = "Xoá hồ sơ này", 2500); return; }
+    if (!delArm) {
+      btn.textContent = "Chạm lần nữa để xoá (mất nhật ký của hồ sơ)";
+      delArm = setTimeout(() => { delArm = null; btn.textContent = "Xoá hồ sơ này"; }, 4000);
+      return;
+    }
+    clearTimeout(delArm); delArm = null; btn.textContent = "Xoá hồ sơ này";
+    const id = P().id;
+    S.profiles = S.profiles.filter(x => x.id !== id);
+    S.log = S.log.filter(e => e.pid !== id);
+    S.active = S.profiles[0].id; save(); loadProfileUI(); render();
+  });
+  $("shift").addEventListener("change", e => { P().shift = e.target.value; save(); render(); });
+  $("minRounds").addEventListener("input", e => { const n = parseInt(e.target.value, 10); if (n > 0) { P().minRounds = n; save(); render(); } });
+  $("gap").addEventListener("input", e => { const n = parseInt(e.target.value, 10); if (n > 0) { P().gap = n; save(); render(); } });
+  $("newRound").addEventListener("click", () => {
+    const { r } = currentRound();
+    S.closed = S.closed || {};
+    S.closed[P().id + "|" + shiftKey(new Date())] = r;
+    save(); render();
+  });
+}
+
+function skipRefresh() {
+  const area = $("skipArea").value, cur = S.skip[area] || [];
+  const box = $("skipItems"); box.textContent = "";
+  ITEMS.forEach(it => {
+    const l = document.createElement("label");
+    const c = document.createElement("input"); c.type = "checkbox"; c.id = "skip_" + it.id; c.value = it.id;
+    c.checked = !it.required && cur.indexOf(it.id) >= 0; c.disabled = !!it.required;
+    c.addEventListener("change", () => {
+      const list = (S.skip[area] || []).filter(x => x !== it.id);
+      if (c.checked) list.push(it.id);
+      if (list.length) S.skip[area] = list; else delete S.skip[area];
+      save(); skipSummary();
+    });
+    const t = document.createElement("span");
+    t.textContent = it.label + (it.required ? " (form bắt buộc, luôn gửi)" : " — bỏ qua tại đây");
+    l.append(c, t); box.appendChild(l);
+  });
+  skipSummary();
+}
+function skipSummary() {
+  const rows = Object.keys(S.skip).map(a => disp(a) + ": bỏ " + S.skip[a].length + " mục");
+  $("skipSummary").textContent = rows.length ? "Đang bỏ qua: " + rows.join("; ") : "Chưa bỏ qua mục nào, vị trí nào cũng gửi đủ.";
+}
+function fillProf() {
+  const sel = $("prof"); sel.textContent = "";
+  S.profiles.forEach((p, i) => {
+    const o = document.createElement("option"); o.value = p.id; o.textContent = p.name.trim() || "Hồ sơ " + (i + 1) + " (chưa đặt tên)";
+    sel.appendChild(o);
+  });
+  sel.value = P().id;
+}
+function loadProfileUI() {
+  const p = P();
+  $("name").value = p.name; $("shift").value = p.shift; $("minRounds").value = p.minRounds; $("gap").value = p.gap; $("remind").value = p.remind === undefined ? 3 : p.remind;
+  AREAS.forEach((a, i) => { $("route_" + i).checked = p.route.indexOf(a) >= 0; });
+  fillProf();
+}
+buildStatic(); loadProfileUI(); render(); setSync(); flush();
+setInterval(render, 20000);
+setInterval(tickAlarm, 1000);
+tickAlarm();
+try { navigator.wakeLock && navigator.wakeLock.request("screen").catch(() => {}); } catch (e) {}
+</script>
+</body>
+</html>

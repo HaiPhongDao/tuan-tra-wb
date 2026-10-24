@@ -1,0 +1,277 @@
+/**
+ * Tuần tra West Bay: nhận báo cáo từ trang nhân viên và tính trạng thái cho trang trưởng ca.
+ * Dán toàn bộ file này vào Apps Script gắn với một Google Sheet, chạy khoiTao() một lần, rồi Triển khai > Ứng dụng web.
+ */
+const TZ_OFFSET_H = 7; // Việt Nam, không có giờ mùa hè
+const SHEET_NV = 'NhanVien';
+const SHEET_LOG = 'NhatKy';
+const SHEET_CFG = 'CauHinh';
+
+const CFG_DEFAULTS = [
+  ['adminKey', '', 'Mã của trưởng ca để mở trang giám sát. Tự tạo khi chạy khoiTao().'],
+  ['gapMin', 90, 'Phút giữa hai vòng tuần tra'],
+  ['tolMin', 10, 'Dung sai (phút) trước khi báo đỏ quá giờ vòng kế tiếp'],
+  ['startGraceMin', 30, 'Sau đầu ca bao nhiêu phút mà chưa có tín hiệu thì báo đỏ'],
+  ['roundGraceMin', 30, 'Một vòng bắt đầu bao nhiêu phút mà còn thiếu điểm thì báo đỏ'],
+  ['minRounds', 6, 'Số vòng tối thiểu mỗi ca'],
+  ['dayStartHour', 6, 'Giờ bắt đầu Ca Ngày'],
+  ['nightStartHour', 18, 'Giờ bắt đầu Ca Đêm'],
+  ['email', '', 'Email nhận cảnh báo đỏ. Để trống thì dùng email của chủ Sheet.']
+];
+
+/* ---------- Cài đặt lần đầu ---------- */
+function khoiTao() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  let nv = ss.getSheetByName(SHEET_NV) || ss.insertSheet(SHEET_NV);
+  if (nv.getLastRow() === 0) {
+    nv.appendRow(['id', 'ten', 'ma', 'ca_truc', 'hoat_dong']);
+    nv.appendRow(['A01', 'Nguyễn Văn A (mẫu, sửa hoặc xoá)', randKey_(), 'Ngày', 'x']);
+    nv.setFrozenRows(1);
+  }
+  let lg = ss.getSheetByName(SHEET_LOG) || ss.insertSheet(SHEET_LOG);
+  if (lg.getLastRow() === 0) {
+    lg.appendRow(['id', 'gio_may_chu', 'gio_may_nv', 'uid', 'ten', 'ca', 'vong', 'khu_vuc', 'thu', 'huy', 'tuyen']);
+    lg.setFrozenRows(1);
+  }
+  let cf = ss.getSheetByName(SHEET_CFG) || ss.insertSheet(SHEET_CFG);
+  if (cf.getLastRow() === 0) {
+    cf.appendRow(['khoa', 'gia_tri', 'ghi_chu']);
+    CFG_DEFAULTS.forEach(r => cf.appendRow(r));
+  }
+  const cur = cfgMap_();
+  if (!cur.adminKey) setCfg_('adminKey', randKey_());
+  const s1 = ss.getSheetByName('Sheet1') || ss.getSheetByName('Trang tính1');
+  if (s1 && s1.getLastRow() === 0 && ss.getSheets().length > 1) ss.deleteSheet(s1);
+  SpreadsheetApp.getUi().alert('Xong. Mở trang CauHinh để lấy adminKey, trang NhanVien để quản lý nhân viên và ca trực.');
+}
+
+function caiTrigger() {
+  ScriptApp.getProjectTriggers().filter(t => t.getHandlerFunction() === 'kiemTra').forEach(t => ScriptApp.deleteTrigger(t));
+  ScriptApp.newTrigger('kiemTra').timeBased().everyMinutes(10).create();
+}
+
+/* ---------- API ---------- */
+function doGet(e) {
+  const p = (e && e.parameter) || {};
+  try {
+    if (p.action === 'ping') return out_({ ok: true });
+    if (p.action === 'tap') return out_(actTap_(p));
+    if (p.action === 'cancel') return out_(actCancel_(p));
+    if (p.action === 'dash') return out_(actDash_(p));
+    return out_({ ok: false, err: 'action' });
+  } catch (err) {
+    return out_({ ok: false, err: 'server', msg: String(err) });
+  }
+}
+
+function out_(o) {
+  return ContentService.createTextOutput(JSON.stringify(o)).setMimeType(ContentService.MimeType.JSON);
+}
+
+function actTap_(p) {
+  const nv = findStaff_(p.u, p.k);
+  if (!nv) return { ok: false, err: 'key' };
+  const id = String(p.id || '');
+  if (!id) return { ok: false, err: 'id' };
+  const lock = LockService.getScriptLock();
+  lock.waitLock(20000);
+  try {
+    const sh = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SHEET_LOG);
+    const n = sh.getLastRow();
+    if (n > 1) {
+      const from = Math.max(2, n - 300);
+      const ids = sh.getRange(from, 1, n - from + 1, 1).getValues();
+      for (let i = 0; i < ids.length; i++) if (String(ids[i][0]) === id) return { ok: false, err: 'dup' };
+    }
+    sh.appendRow([id, new Date(), Number(p.t) || '', nv.id, nv.ten, p.shift || '', Number(p.round) || 1, p.area || '', '', '', p.route || '']);
+  } finally { lock.releaseLock(); }
+  return { ok: true };
+}
+
+function actCancel_(p) {
+  const nv = findStaff_(p.u, p.k);
+  if (!nv) return { ok: false, err: 'key' };
+  const lock = LockService.getScriptLock();
+  lock.waitLock(20000);
+  try {
+    const sh = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SHEET_LOG);
+    const n = sh.getLastRow();
+    if (n < 2) return { ok: false, err: 'missing' };
+    const from = Math.max(2, n - 500);
+    const vals = sh.getRange(from, 1, n - from + 1, 4).getValues();
+    for (let i = 0; i < vals.length; i++) {
+      if (String(vals[i][0]) === String(p.id) && String(vals[i][3]) === nv.id) {
+        sh.getRange(from + i, 10).setValue('x');
+        return { ok: true };
+      }
+    }
+  } finally { lock.releaseLock(); }
+  return { ok: false, err: 'missing' };
+}
+
+function actDash_(p) {
+  const c = cfgMap_();
+  if (!c.adminKey || p.ak !== String(c.adminKey)) return { ok: false, err: 'admin' };
+  return Object.assign({ ok: true }, dashboard_(Date.now(), true));
+}
+
+/* ---------- Dữ liệu ---------- */
+function randKey_() {
+  const chars = 'abcdefghjkmnpqrstuvwxyz23456789';
+  let s = '';
+  for (let i = 0; i < 12; i++) s += chars[Math.floor(Math.random() * chars.length)];
+  return s;
+}
+
+function cfgMap_() {
+  const sh = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SHEET_CFG);
+  const o = {};
+  CFG_DEFAULTS.forEach(r => { o[r[0]] = r[1]; });
+  if (!sh || sh.getLastRow() < 2) return o;
+  sh.getRange(2, 1, sh.getLastRow() - 1, 2).getValues().forEach(r => {
+    if (r[0] !== '' && r[1] !== '') o[r[0]] = r[1];
+  });
+  return o;
+}
+
+function setCfg_(key, value) {
+  const sh = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SHEET_CFG);
+  const vals = sh.getRange(1, 1, sh.getLastRow(), 1).getValues();
+  for (let i = 0; i < vals.length; i++) if (vals[i][0] === key) { sh.getRange(i + 1, 2).setValue(value); return; }
+  sh.appendRow([key, value, '']);
+}
+
+function staffList_() {
+  const sh = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SHEET_NV);
+  if (!sh || sh.getLastRow() < 2) return [];
+  return sh.getRange(2, 1, sh.getLastRow() - 1, 5).getValues()
+    .filter(r => String(r[0]).trim() && String(r[2]).trim())
+    .map(r => ({ id: String(r[0]).trim(), ten: String(r[1]).trim(), ma: String(r[2]).trim(), ca: String(r[3]).trim(), on: String(r[4]).trim() !== '' }));
+}
+
+function findStaff_(u, k) {
+  const a = staffList_().find(s => s.id === String(u) && s.ma === String(k) && s.on);
+  return a ? { id: a.id, ten: a.ten } : null;
+}
+
+/* Ca làm việc chứa thời điểm ms, tính theo giờ Việt Nam. */
+function shiftWindow_(ms, c) {
+  const off = TZ_OFFSET_H * 3600000;
+  const loc = new Date(ms + off);
+  const h = loc.getUTCHours();
+  const dS = Number(c.dayStartHour), nS = Number(c.nightStartHour);
+  const y = loc.getUTCFullYear(), m = loc.getUTCMonth(), d = loc.getUTCDate();
+  const at = (yy, mm, dd, hh) => Date.UTC(yy, mm, dd, hh) - off;
+  if (h >= dS && h < nS) return { label: 'Ngày', start: at(y, m, d, dS), end: at(y, m, d, nS) };
+  const start = h >= nS ? at(y, m, d, nS) : at(y, m, d - 1, nS);
+  return { label: 'Đêm', start, end: start + (24 - nS + dS) * 3600000 };
+}
+
+function readTaps_(sinceMs) {
+  const sh = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SHEET_LOG);
+  const n = sh.getLastRow();
+  if (n < 2) return [];
+  const from = Math.max(2, n - 3000);
+  return sh.getRange(from, 1, n - from + 1, 11).getValues().map(r => ({
+    id: String(r[0]), t: r[1] instanceof Date ? r[1].getTime() : 0, uid: String(r[3]), ten: String(r[4]),
+    shift: String(r[5]), round: Number(r[6]) || 1, area: String(r[7]), test: String(r[8]) !== '', cancelled: String(r[9]) !== '', route: String(r[10])
+  })).filter(x => x.t >= sinceMs);
+}
+
+function evalWindow_(taps, win, now, c, live) {
+  const gap = Number(c.gapMin) * 60000, tol = Number(c.tolMin) * 60000;
+  const out = { rounds: 0, complete: 0, reasons: [], level: 'ok', last: null, nextDue: null, route: [] };
+  if (!taps.length) {
+    if (live) {
+      const late = now - (win.start + Number(c.startGraceMin) * 60000);
+      if (late > 0) { out.level = 'red'; out.reasons.push('Chưa có tín hiệu nào từ đầu ca (' + Math.round((now - win.start) / 60000) + ' phút)'); }
+      else out.level = 'wait';
+    } else out.level = 'red';
+    return out;
+  }
+  const sorted = taps.slice().sort((a, b) => a.t - b.t);
+  out.last = sorted[sorted.length - 1];
+  let route = [];
+  try { route = JSON.parse(out.last.route || '[]'); } catch (e) { route = []; }
+  out.route = route;
+  const rounds = {};
+  sorted.forEach(x => {
+    const r = rounds[x.round] || (rounds[x.round] = { n: x.round, start: x.t, areas: {} });
+    if (x.t < r.start) r.start = x.t;
+    r.areas[x.area] = true;
+  });
+  const list = Object.keys(rounds).map(k => rounds[k]).sort((a, b) => a.n - b.n);
+  out.rounds = list.length;
+  out.complete = list.filter(r => route.length && route.every(a => r.areas[a])).length;
+  if (!live) return out;
+  const R = list[list.length - 1];
+  const missing = route.filter(a => !R.areas[a]);
+  out.missing = missing;
+  out.roundStart = R.start;
+  if (missing.length && now - R.start > Number(c.roundGraceMin) * 60000) {
+    out.level = 'red';
+    out.reasons.push('Vòng ' + R.n + ' còn thiếu ' + missing.length + ' điểm: ' + missing.join(', '));
+  }
+  out.nextDue = R.start + gap;
+  if (now > out.nextDue + tol && out.nextDue + tol < win.end) {
+    out.level = 'red';
+    out.reasons.push('Quá giờ vòng ' + (R.n + 1) + ' (' + Math.round((now - out.nextDue) / 60000) + ' phút)');
+  }
+  return out;
+}
+
+function dashboard_(now, withKeys) {
+  const c = cfgMap_();
+  const win = shiftWindow_(now, c);
+  const prevWin = shiftWindow_(win.start - 1, c);
+  const taps = readTaps_(prevWin.start - 3600000).filter(x => !x.test);
+  const staff = staffList_().filter(s => s.on);
+  const rows = staff.map(s => {
+    const ca = s.ca.toLowerCase();
+    const label = win.label.toLowerCase(), plabel = prevWin.label.toLowerCase();
+    const mine = taps.filter(x => x.uid === s.id && !x.cancelled);
+    const cur = mine.filter(x => x.t >= win.start && x.t < win.end);
+    const prev = mine.filter(x => x.t >= prevWin.start && x.t < prevWin.end);
+    const cancels = taps.filter(x => x.uid === s.id && x.cancelled && x.t >= win.start && x.t < win.end).length;
+    const onDuty = ca === label || ca === 'cả hai' || ca === 'ca hai';
+    const row = { id: s.id, ten: s.ten, ca: s.ca, onDuty, cancels, level: 'off', reasons: [], rounds: 0, complete: 0, minRounds: Number(c.minRounds) };
+    if (withKeys) row.ma = s.ma;
+    if (onDuty || cur.length) {
+      const e = evalWindow_(cur, win, now, c, true);
+      row.level = onDuty ? e.level : 'ok';
+      row.reasons = e.reasons; row.rounds = e.rounds; row.complete = e.complete;
+      row.nextDue = e.nextDue; row.roundStart = e.roundStart || null; row.missing = e.missing || [];
+      row.last = e.last ? { t: e.last.t, area: e.last.area, round: e.last.round } : null;
+    }
+    // Báo cáo ca vừa kết thúc, hiện trong 4 giờ đầu của ca mới.
+    if ((ca === plabel || ca === 'cả hai' || prev.length) && now - win.start < 4 * 3600000) {
+      const pe = evalWindow_(prev, prevWin, now, c, false);
+      const short = pe.complete < Number(c.minRounds);
+      row.prev = { label: prevWin.label, rounds: pe.rounds, complete: pe.complete, short, assigned: ca === plabel || ca === 'cả hai' };
+      if (short && row.prev.assigned && prev.length >= 0) { row.prevRed = true; row.reasons.push('Ca ' + prevWin.label + ' trước chỉ đủ ' + pe.complete + '/' + c.minRounds + ' vòng'); if (row.level !== 'red') row.level = 'red'; }
+    }
+    return row;
+  });
+  const recent = taps.sort((a, b) => b.t - a.t).slice(0, 40).map(x => ({ id: x.id, t: x.t, uid: x.uid, ten: x.ten, area: x.area, round: x.round, cancelled: x.cancelled }));
+  return { now, win: { label: win.label, start: win.start, end: win.end }, staff: rows, recent, cfg: { gapMin: Number(c.gapMin), minRounds: Number(c.minRounds) } };
+}
+
+/* ---------- Cảnh báo email (chạy mỗi 10 phút nhờ caiTrigger) ---------- */
+function kiemTra() {
+  const d = dashboard_(Date.now(), false);
+  const props = PropertiesService.getScriptProperties();
+  const sent = JSON.parse(props.getProperty('sent') || '{}');
+  const fresh = [];
+  d.staff.forEach(s => {
+    if (s.level !== 'red') return;
+    const key = s.id + '|' + d.win.start + '|' + s.reasons.join(';');
+    if (!sent[key]) { sent[key] = Date.now(); fresh.push(s); }
+  });
+  Object.keys(sent).forEach(k => { if (Date.now() - sent[k] > 2 * 86400000) delete sent[k]; });
+  props.setProperty('sent', JSON.stringify(sent));
+  if (!fresh.length) return;
+  const c = cfgMap_();
+  const to = String(c.email || '').trim() || Session.getEffectiveUser().getEmail();
+  const body = fresh.map(s => '• ' + s.ten + ': ' + s.reasons.join('; ')).join('\n');
+  MailApp.sendEmail(to, 'Tuần tra West Bay: ' + fresh.length + ' cảnh báo đỏ', body);
+}
