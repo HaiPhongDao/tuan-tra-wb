@@ -234,7 +234,11 @@ body { margin: 0; }
     <label class="field"><span>Số vòng tối thiểu mỗi ca</span><input type="text" inputmode="numeric" id="minRounds"></label>
     <label class="field"><span>Phút giữa hai vòng</span><input type="text" inputmode="numeric" id="gap"></label>
     <label class="field"><span>Nhắc quay lại bấm sau mấy phút (0 = tắt)</span><input type="text" inputmode="numeric" id="remind"></label>
-    <div class="row"><button class="btn" id="testBeep" type="button">Thử chuông</button></div>
+    <div class="row">
+      <button class="btn" id="testBeep" type="button">Thử chuông</button>
+      <button class="btn" id="btnAndroidBattery" type="button" style="display:none;background:var(--accent-2);color:#fff">Cài đặt pin chạy nền</button>
+    </div>
+    <p class="hint" id="androidHint" style="display:none;color:var(--accent-2);font-weight:600">📱 Báo thức nền Android: Sẵn sàng báo chuông ngay cả khi tắt app.</p>
 
     <h3>Tuyến tuần tra</h3>
     <div class="field"><span>Các điểm trong tuyến, theo thứ tự chạm</span><div class="routelist" id="routeList"></div></div>
@@ -525,12 +529,33 @@ function beep() {
     o.connect(g); g.connect(actx.destination); o.start(t0); o.stop(t0 + 0.3);
   }
 }
+function notifyAndroidAlarm(a) {
+  try {
+    if (window.Android && window.Android.scheduleAlarm) {
+      const title = "Đến giờ: " + disp(a.next);
+      const sub = (a.who ? a.who + " · " : "") + "Đến giờ di chuyển tới " + disp(a.next);
+      window.Android.scheduleAlarm(title, sub, a.due, disp(a.next));
+    }
+  } catch (e) { console.error("Android schedule error", e); }
+}
+function notifyAndroidCancel() {
+  try {
+    if (window.Android && window.Android.cancelAlarm) {
+      window.Android.cancelAlarm();
+    }
+  } catch (e) { console.error("Android cancel error", e); }
+}
 function setAlarm(entry) {
   const m = remindMin();
-  if (!(m > 0)) { S.alarm = null; return; }
+  if (!(m > 0)) { S.alarm = null; notifyAndroidCancel(); return; }
   const done = new Set(shiftLog().filter(e => e.round === entry.round).map(e => e.area));
   const next = P().route.find(a => !done.has(a));
   S.alarm = next ? { pid: P().id, who: P().name, due: entry.t + m * 60000, next, start: 0 } : null;
+  if (S.alarm) {
+    notifyAndroidAlarm(S.alarm);
+  } else {
+    notifyAndroidCancel();
+  }
 }
 function tickAlarm() {
   const box = $("alarm"), a = S.alarm;
@@ -671,9 +696,20 @@ function buildStatic() {
     $("name").readOnly = true;
     $("delProf").hidden = true;
   }
-  $("alarmOff").addEventListener("click", () => { S.alarm = null; save(); tickAlarm(); });
-  $("testBeep").addEventListener("click", () => { unlockAudio(); beep(); });
-  $("remind").addEventListener("input", e => { const n = parseInt(e.target.value, 10); if (n >= 0) { P().remind = n; save(); } });
+  $("alarmOff").addEventListener("click", () => { S.alarm = null; save(); tickAlarm(); notifyAndroidCancel(); });
+  $("testBeep").addEventListener("click", () => {
+    unlockAudio();
+    beep();
+    try { window.Android && window.Android.testAlarm && window.Android.testAlarm(); } catch (e) {}
+  });
+  $("remind").addEventListener("input", e => {
+    const n = parseInt(e.target.value, 10);
+    if (n >= 0) {
+      P().remind = n;
+      save();
+      if (n === 0) notifyAndroidCancel();
+    }
+  });
   $("name").addEventListener("input", e => { P().name = e.target.value; save(); fillProf(); render(); });
   $("prof").addEventListener("change", e => { S.active = e.target.value; armed = null; save(); loadProfileUI(); render(); });
   $("addProf").addEventListener("click", () => {
@@ -744,6 +780,20 @@ function loadProfileUI() {
   fillProf();
 }
 buildStatic(); loadProfileUI(); render(); setSync(); flush();
+if (window.Android) {
+  const btnBat = $("btnAndroidBattery");
+  const hint = $("androidHint");
+  if (btnBat) {
+    btnBat.style.display = "inline-block";
+    btnBat.onclick = () => {
+      try { window.Android.requestBatteryOptimizationExemption(); } catch (e) {}
+    };
+  }
+  if (hint) hint.style.display = "block";
+  if (S.alarm && S.alarm.due > Date.now()) {
+    notifyAndroidAlarm(S.alarm);
+  }
+}
 setInterval(render, 20000);
 setInterval(tickAlarm, 1000);
 tickAlarm();

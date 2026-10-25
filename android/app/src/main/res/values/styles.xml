@@ -1,0 +1,20 @@
+<resources>
+    <!-- Base application theme -->
+    <style name="Theme.TuanTraWB" parent="Theme.MaterialComponents.DayNight.NoActionBar">
+        <item name="colorPrimary">@color/primary</item>
+        <item name="colorPrimaryVariant">@color/primary_dark</item>
+        <item name="colorOnPrimary">@color/white</item>
+        <item name="colorSecondary">@color/accent</item>
+        <item name="android:statusBarColor">@color/primary</item>
+        <item name="android:navigationBarColor">@color/surface</item>
+    </style>
+
+    <!-- Fullscreen Alarm Alert Screen -->
+    <style name="Theme.TuanTraWB.Alert" parent="Theme.MaterialComponents.DayNight.NoActionBar">
+        <item name="android:windowBackground">@color/warn_bg</item>
+        <item name="android:statusBarColor">@color/warn</item>
+        <item name="android:navigationBarColor">@color/warn_bg</item>
+        <item name="android:windowShowWhenLocked">true</item>
+        <item name="android:windowTurnScreenOn">true</item>
+    </style>
+</resources>

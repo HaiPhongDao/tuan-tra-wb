@@ -1,0 +1,7 @@
+<resources>
+    <string name="app_name">Tuần Tra WB</string>
+    <string name="channel_alarm_name">Nhắc nhở tuần tra</string>
+    <string name="channel_alarm_desc">Báo chuông và rung khi đến giờ chuyển điểm tuần tra</string>
+    <string name="action_open_app">Mở ứng dụng</string>
+    <string name="action_stop_alarm">Tắt chuông</string>
+</resources>

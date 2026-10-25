@@ -1,0 +1,57 @@
+name: Build Android APK
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+
+      - name: Grant execute permission for gradlew
+        run: chmod +x android/gradlew
+
+      - name: Build APK with Gradle
+        run: |
+          cd android
+          ./gradlew assembleRelease --stacktrace
+
+      - name: Prepare APK file
+        run: |
+          cp android/app/build/outputs/apk/release/app-release.apk TuanTraWB.apk
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: TuanTraWB-apk
+          path: TuanTraWB.apk
+
+      - name: Create / Update GitHub Release
+        uses: softprops/action-gh-release@v2
+        if: github.ref == 'refs/heads/main'
+        with:
+          tag_name: v1.0.0
+          name: "Tuần Tra WB v1.0.0 - Báo thức nền khi tắt app"
+          body: |
+            ### Ứng dụng Android APK Tuần Tra West Bay
+            - Tích hợp chuông báo thức và rung bằng **Android AlarmManager** (`RTC_WAKEUP`).
+            - **Báo nhắc nhở đến giờ tuần tra ngay cả khi tắt ứng dụng hoặc tắt màn hình khoá.**
+            - Màn hình chuông báo to rõ với nút bấm trực tiếp vào ứng dụng để quét/bấm điểm.
+            - Hỗ trợ chạy 100% offline trong hầm / khu vực mất sóng.
+          files: TuanTraWB.apk
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

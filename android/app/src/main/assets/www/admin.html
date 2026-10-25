@@ -1,0 +1,373 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Giám Sát Tuần Tra</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700&family=Barlow:wght@400;500;600&display=swap">
+<style>
+/* Bố cục: một cột. Dải trạng thái toàn ca ở trên (đỏ khi có người cần chú ý), thẻ từng nhân viên xếp đỏ trước, hoạt động gần đây và link nhân viên gập ở dưới. */
+:root {
+  --bg: #e9ede8; --surface: #fbfcfa; --fg: #17211c; --muted: #5a675f; --line: #d2d9d1;
+  --accent: #0b5d4b; --accent-2: #0f7a62; --accent-fg: #ffffff;
+  --red: #b3261e; --red-bg: #fbe3e0; --red-fg: #ffffff;
+  --amber: #8a5a00; --amber-bg: #fdf0cf;
+  --ok: #0f5240; --ok-bg: #dcebe1;
+  --shadow: 0 1px 2px rgba(20,40,30,.10), 0 4px 14px rgba(20,40,30,.07);
+  --font-display: "Barlow Condensed", "Arial Narrow", sans-serif;
+  --font-body: "Barlow", system-ui, sans-serif;
+  padding-top: env(safe-area-inset-top, 0px); padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0e1411; --surface: #18211c; --fg: #e6ece7; --muted: #96a69c; --line: #2a362f;
+    --accent: #1b6f5a; --accent-2: #2a8a71; --accent-fg: #f3fbf7;
+    --red: #ff8a80; --red-bg: #43211e; --red-fg: #2a0b08;
+    --amber: #f2c466; --amber-bg: #3a2e12; --ok: #9fe3c8; --ok-bg: #1c3328;
+    --shadow: 0 1px 2px rgba(0,0,0,.5); color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0e1411; --surface: #18211c; --fg: #e6ece7; --muted: #96a69c; --line: #2a362f;
+  --accent: #1b6f5a; --accent-2: #2a8a71; --accent-fg: #f3fbf7;
+  --red: #ff8a80; --red-bg: #43211e; --red-fg: #2a0b08;
+  --amber: #f2c466; --amber-bg: #3a2e12; --ok: #9fe3c8; --ok-bg: #1c3328;
+  --shadow: 0 1px 2px rgba(0,0,0,.5); color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0; background: var(--bg); color: var(--fg); font-family: var(--font-body); font-size: 16px; line-height: 1.4;
+  padding-block: 14px 48px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+}
+main { max-width: 640px; margin: 0 auto; display: flex; flex-direction: column; gap: 14px; }
+h1, h2 { font-family: var(--font-display); font-weight: 700; margin: 0; letter-spacing: .03em; text-transform: uppercase; }
+h1 { font-size: 22px; line-height: 1.1; }
+h2 { font-size: 15px; color: var(--muted); }
+button { font: inherit; color: inherit; cursor: pointer; }
+:focus-visible { outline: 3px solid var(--accent-2); outline-offset: 2px; }
+[hidden] { display: none !important; }
+input[type=text], input[type=password] { width: 100%; min-height: 44px; font: inherit; color: var(--fg); background: var(--bg); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; }
+.btn { min-height: 44px; padding: 10px 16px; border-radius: 10px; border: 1px solid var(--line); background: var(--surface); font-weight: 500; }
+.btn.primary { background: var(--accent); color: var(--accent-fg); border-color: var(--accent); }
+.top { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.clock { font-family: var(--font-display); font-size: 34px; line-height: 1; font-variant-numeric: tabular-nums; }
+.sub { font-size: 13px; color: var(--muted); margin-top: 2px; }
+
+.banner { border-radius: 16px; padding: 16px; box-shadow: var(--shadow); background: var(--ok-bg); color: var(--ok); }
+.banner b { display: block; font-family: var(--font-display); font-size: 30px; line-height: 1.1; text-transform: uppercase; }
+.banner span { font-size: 14px; }
+.banner.red { background: var(--red); color: var(--red-fg); }
+.banner.wait { background: var(--amber-bg); color: var(--amber); }
+@media (prefers-reduced-motion: no-preference) { .banner.red { animation: pulse 1.4s ease-in-out infinite; } }
+@keyframes pulse { 50% { opacity: .82; } }
+
+.cards { display: flex; flex-direction: column; gap: 10px; }
+.card { background: var(--surface); border: 1px solid var(--line); border-left: 8px solid var(--line); border-radius: 14px; padding: 14px; box-shadow: var(--shadow); }
+.card.red { border-left-color: var(--red); background: var(--red-bg); }
+.card.ok { border-left-color: var(--accent-2); }
+.card.wait { border-left-color: #c79200; }
+.card.off { opacity: .65; }
+.cardtop { display: flex; justify-content: space-between; gap: 10px; align-items: flex-start; }
+.cardtop b { font-size: 18px; overflow-wrap: anywhere; }
+.pill { flex: none; font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: .06em; border-radius: 999px; padding: 3px 10px; background: var(--ok-bg); color: var(--ok); }
+.card.red .pill { background: var(--red); color: var(--red-fg); }
+.card.wait .pill { background: var(--amber-bg); color: var(--amber); }
+.card.off .pill { background: var(--line); color: var(--muted); }
+.reasons { margin: 8px 0 0; padding-left: 18px; color: var(--red); font-weight: 600; }
+.meta { margin-top: 8px; display: grid; grid-template-columns: 1fr 1fr; gap: 6px 12px; font-size: 14px; color: var(--muted); }
+.meta b { color: var(--fg); font-weight: 600; font-variant-numeric: tabular-nums; }
+.meta div { min-width: 0; overflow-wrap: anywhere; }
+.segs { display: flex; gap: 4px; margin-top: 10px; }
+.segs i { flex: 1; height: 7px; border-radius: 4px; background: var(--line); }
+.segs i.on { background: var(--accent-2); }
+
+.panel { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 14px; box-shadow: var(--shadow); }
+details.panel > summary { list-style: none; cursor: pointer; font-weight: 600; display: flex; justify-content: space-between; align-items: center; min-height: 28px; }
+details.panel > summary::-webkit-details-marker { display: none; }
+details.panel > summary::after { content: "▾"; color: var(--muted); }
+details.panel[open] > summary::after { transform: rotate(180deg); }
+details.panel[open] > summary { margin-bottom: 8px; }
+ul.list { list-style: none; margin: 0; padding: 0; font-size: 14px; }
+ul.list li { display: flex; justify-content: space-between; gap: 10px; padding: 9px 0; border-bottom: 1px solid var(--line); }
+ul.list li.cx { color: var(--red); text-decoration: line-through; }
+ul.list time { font-variant-numeric: tabular-nums; font-weight: 600; white-space: nowrap; }
+.linkrow { padding: 10px 0; border-bottom: 1px solid var(--line); }
+.linkrow b { display: block; }
+.linkrow code { display: block; font-size: 12px; color: var(--muted); overflow-wrap: anywhere; margin: 4px 0 8px; }
+.staffrow { padding: 12px 0; border-bottom: 1px solid var(--line); display: grid; gap: 8px; }
+.staffrow .r1 { display: grid; grid-template-columns: 1fr 120px; gap: 8px; }
+.staffrow .idline { font-size: 12px; color: var(--muted); }
+.staffrow .acts { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.staffrow .acts .btn { min-height: 40px; padding: 8px 12px; font-size: 14px; }
+.staffrow label.on { display: flex; gap: 6px; align-items: center; font-size: 14px; }
+.staffrow label.on input { width: 20px; height: 20px; accent-color: var(--accent-2); }
+.staffrow code { font-size: 12px; color: var(--muted); overflow-wrap: anywhere; }
+select, .staffrow input[type=text], .addbox input[type=text] { width: 100%; min-height: 44px; font: inherit; color: var(--fg); background: var(--bg); border: 1px solid var(--line); border-radius: 10px; padding: 8px 10px; }
+.addbox { display: grid; gap: 8px; margin-top: 12px; padding-top: 12px; border-top: 2px solid var(--line); }
+.addbox .r2 { display: grid; grid-template-columns: 1fr 1fr 120px; gap: 8px; }
+.cfgrow { display: grid; grid-template-columns: 1fr 100px; gap: 8px; align-items: center; padding: 8px 0; border-bottom: 1px solid var(--line); font-size: 14px; }
+.toast { position: fixed; left: 50%; bottom: calc(16px + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%); background: var(--fg); color: var(--bg); padding: 10px 16px; border-radius: 10px; font-size: 14px; z-index: 30; max-width: calc(100% - 32px); }
+.hint { font-size: 13px; color: var(--muted); margin: 8px 0 0; }
+.err { color: var(--red); font-weight: 600; }
+</style>
+<script src="config.js?v=2"></script>
+</head>
+<body>
+<main>
+  <div class="top">
+    <div>
+      <h1>Giám sát tuần tra</h1>
+      <div class="sub" id="winLine">Chưa kết nối</div>
+    </div>
+    <div class="clock" id="clock">--:--</div>
+  </div>
+
+  <section class="panel" id="login">
+    <label for="ak" class="hint" style="margin:0 0 6px;display:block">Mã trưởng ca (adminKey trong trang CauHinh của Google Sheet)</label>
+    <input type="password" id="ak" autocomplete="current-password">
+    <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">
+      <button class="btn primary" id="go" type="button">Xem</button>
+      <button class="btn" id="sound" type="button">Bật chuông khi có cảnh báo đỏ</button>
+    </div>
+    <p class="hint" id="msg"></p>
+  </section>
+
+  <section class="banner" id="banner" hidden><b id="bTitle"></b><span id="bSub"></span></section>
+
+  <section>
+    <div class="cards" id="cards"></div>
+  </section>
+
+  <details class="panel" id="recentBox">
+    <summary>Hoạt động gần đây</summary>
+    <ul class="list" id="recent"></ul>
+  </details>
+
+  <details class="panel" id="staffBox" open>
+    <summary>Nhân viên và ca trực</summary>
+    <div id="roster"></div>
+    <div class="addbox">
+      <b>Thêm nhân viên</b>
+      <div class="r2">
+        <input type="text" id="newId" placeholder="Mã (vd B02)" autocapitalize="characters" aria-label="Mã nhân viên">
+        <input type="text" id="newName" placeholder="Họ tên" aria-label="Họ tên">
+        <select id="newCa" aria-label="Ca trực"><option>Ngày</option><option>Đêm</option><option>Cả hai</option><option>Nghỉ</option></select>
+      </div>
+      <button class="btn primary" id="addStaff" type="button">Thêm</button>
+    </div>
+    <p class="hint">Mỗi nhân viên có link riêng kèm mã bí mật. Gửi riêng từng người, không gửi vào nhóm chung. "Đổi mã" làm link cũ ngừng hoạt động. Chỉ người có ca trực khớp ca hiện tại mới bị tính báo đỏ.</p>
+  </details>
+
+  <details class="panel" id="cfgBox">
+    <summary>Quy tắc báo đỏ</summary>
+    <div id="cfgList"></div>
+    <p class="hint">Mỗi ô tự lưu khi bạn rời ô. Email để trống thì dùng email của chủ Sheet.</p>
+  </details>
+</main>
+
+<script>
+const CFG = window.TUANTRA || {};
+const $ = id => document.getElementById(id);
+const pad = n => String(n).padStart(2, "0");
+const hhmm = ms => { const d = new Date(ms); return pad(d.getHours()) + ":" + pad(d.getMinutes()); };
+const AK = "tuantra_admin_key";
+let timer = null, soundOn = false, actx = null, lastReds = null;
+
+function beep() {
+  if (!soundOn || !actx) return;
+  try { navigator.vibrate && navigator.vibrate([300, 150, 300]); } catch (e) {}
+  for (let i = 0; i < 3; i++) {
+    const o = actx.createOscillator(), g = actx.createGain();
+    o.type = "square"; o.frequency.value = i % 2 ? 660 : 880;
+    const t0 = actx.currentTime + i * 0.35;
+    g.gain.setValueAtTime(0.0001, t0); g.gain.exponentialRampToValueAtTime(0.4, t0 + 0.02); g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.28);
+    o.connect(g); g.connect(actx.destination); o.start(t0); o.stop(t0 + 0.3);
+  }
+}
+
+async function load() {
+  const key = $("ak").value.trim();
+  if (!CFG.SCRIPT_URL) { $("msg").textContent = "Chưa có địa chỉ Apps Script trong config.js."; $("msg").className = "hint err"; return; }
+  if (!key) return;
+  try { localStorage.setItem(AK, key); } catch (e) {}
+  $("msg").className = "hint"; $("msg").textContent = "Đang tải...";
+  try {
+    const r = await fetch(CFG.SCRIPT_URL + "?action=dash&ak=" + encodeURIComponent(key), { cache: "no-store" });
+    const j = await r.json();
+    if (!j.ok) { $("msg").className = "hint err"; $("msg").textContent = j.err === "admin" ? "Mã trưởng ca không đúng." : "Lỗi máy chủ: " + (j.msg || j.err); return; }
+    $("msg").textContent = "Cập nhật " + hhmm(Date.now());
+    $("login").hidden = true;
+    draw(j);
+    clearTimeout(timer); timer = setTimeout(load, 30000);
+  } catch (e) {
+    $("msg").className = "hint err"; $("msg").textContent = "Không kết nối được. Kiểm tra mạng rồi bấm Xem.";
+    clearTimeout(timer); timer = setTimeout(load, 30000);
+  }
+}
+
+function draw(d) {
+  $("winLine").textContent = "Ca " + d.win.label + " · " + hhmm(d.win.start) + "–" + hhmm(d.win.end);
+  const order = { red: 0, wait: 1, ok: 2, off: 3 };
+  const staff = d.staff.slice().sort((a, b) => (order[a.level] - order[b.level]) || a.ten.localeCompare(b.ten));
+  const reds = staff.filter(s => s.level === "red");
+  const wait = staff.filter(s => s.level === "wait");
+  const on = staff.filter(s => s.onDuty);
+  const b = $("banner"); b.hidden = false; b.className = "banner" + (reds.length ? " red" : wait.length ? " wait" : "");
+  if (reds.length) { $("bTitle").textContent = reds.length + " nhân viên cần chú ý"; $("bSub").textContent = reds.map(s => s.ten).join(", "); }
+  else if (wait.length) { $("bTitle").textContent = "Đang chờ tín hiệu đầu ca"; $("bSub").textContent = wait.map(s => s.ten).join(", "); }
+  else { $("bTitle").textContent = on.length ? "Mọi nhân viên đúng nhịp" : "Chưa có ai được xếp ca này"; $("bSub").textContent = on.length ? on.length + " người đang trong ca" : "Điền cột ca_truc trong trang NhanVien của Google Sheet."; }
+  const redIds = reds.map(s => s.id + ":" + s.reasons.join("|")).sort().join(";");
+  if (lastReds !== null && redIds && redIds !== lastReds) beep();
+  lastReds = redIds;
+
+  const cards = $("cards"); cards.textContent = "";
+  staff.forEach(s => {
+    const c = document.createElement("div"); c.className = "card " + s.level;
+    const top = document.createElement("div"); top.className = "cardtop";
+    const nm = document.createElement("b"); nm.textContent = s.ten + " (" + s.id + ")";
+    const pill = document.createElement("span"); pill.className = "pill";
+    pill.textContent = s.level === "red" ? "Báo đỏ" : s.level === "wait" ? "Chờ tín hiệu" : s.level === "ok" ? "Đúng nhịp" : "Ngoài ca";
+    top.append(nm, pill); c.appendChild(top);
+    if (s.reasons.length) {
+      const ul = document.createElement("ul"); ul.className = "reasons";
+      s.reasons.forEach(t => { const li = document.createElement("li"); li.textContent = t; ul.appendChild(li); });
+      c.appendChild(ul);
+    }
+    const meta = document.createElement("div"); meta.className = "meta";
+    const add = (k, v) => { const x = document.createElement("div"); x.append(k + " "); const bb = document.createElement("b"); bb.textContent = v; x.appendChild(bb); meta.appendChild(x); };
+    add("Ca xếp:", s.ca || "chưa xếp");
+    add("Vòng đủ điểm:", s.complete + "/" + s.minRounds);
+    add("Chạm gần nhất:", s.last ? hhmm(s.last.t) : "chưa có");
+    add("Điểm:", s.last ? s.last.area : "-");
+    if (s.nextDue) add("Vòng kế tiếp:", hhmm(s.nextDue));
+    if (s.cancels) add("Đã huỷ:", s.cancels + " lần chạm");
+    if (s.prev) add("Ca " + s.prev.label + " trước:", s.prev.complete + "/" + s.minRounds + " vòng");
+    c.appendChild(meta);
+    if (s.minRounds) {
+      const segs = document.createElement("div"); segs.className = "segs";
+      for (let i = 0; i < s.minRounds; i++) { const q = document.createElement("i"); if (i < s.complete) q.className = "on"; segs.appendChild(q); }
+      c.appendChild(segs);
+    }
+    cards.appendChild(c);
+  });
+
+  const rc = $("recent"); rc.textContent = "";
+  d.recent.forEach(x => {
+    const li = document.createElement("li"); if (x.cancelled) li.className = "cx";
+    const l = document.createElement("span"); l.textContent = x.ten + " · V" + x.round + " · " + x.area + (x.cancelled ? " (đã huỷ)" : "");
+    const t = document.createElement("time"); t.textContent = hhmm(x.t);
+    li.append(l, t); rc.appendChild(li);
+  });
+  if (!d.recent.length) { const li = document.createElement("li"); li.textContent = "Chưa có hoạt động."; rc.appendChild(li); }
+
+  drawRoster(d);
+  drawCfg(d);
+}
+
+const CA_OPTS = ["Ngày", "Đêm", "Cả hai", "Nghỉ"];
+const CFG_LABELS = {
+  gapMin: "Phút giữa hai vòng", tolMin: "Dung sai trước khi báo đỏ quá giờ (phút)", startGraceMin: "Chờ tín hiệu đầu ca (phút)",
+  roundGraceMin: "Chờ đủ điểm trong một vòng (phút)", minRounds: "Số vòng tối thiểu mỗi ca", dayStartHour: "Giờ bắt đầu Ca Ngày",
+  nightStartHour: "Giờ bắt đầu Ca Đêm", email: "Email nhận cảnh báo"
+};
+let keyForCalls = "";
+function toast(t) {
+  const el = document.createElement("div"); el.className = "toast"; el.textContent = t; document.body.appendChild(el);
+  setTimeout(() => el.remove(), 2500);
+}
+async function api(params) {
+  const q = new URLSearchParams(Object.assign({ ak: keyForCalls }, params));
+  const r = await fetch(CFG.SCRIPT_URL + "?" + q.toString(), { cache: "no-store" });
+  return r.json();
+}
+async function act(params, okMsg) {
+  try {
+    const j = await api(params);
+    if (j.ok) { toast(okMsg || "Đã lưu"); await load(); return true; }
+    toast(j.msg || ("Không lưu được: " + j.err));
+  } catch (e) { toast("Mất kết nối, thử lại"); }
+  return false;
+}
+function staffLink(s) {
+  const base = new URL("index.html", location.href).href.replace(/index\.html$/, "");
+  return base + "?u=" + encodeURIComponent(s.id) + "&k=" + encodeURIComponent(s.ma) + "&n=" + encodeURIComponent(s.ten);
+}
+function drawRoster(d) {
+  keyForCalls = $("ak").value.trim();
+  const box = $("roster"); box.textContent = "";
+  d.roster.forEach(s => {
+    const row = document.createElement("div"); row.className = "staffrow";
+    const r1 = document.createElement("div"); r1.className = "r1";
+    const nm = document.createElement("input"); nm.type = "text"; nm.value = s.ten; nm.maxLength = 60; nm.id = "nm_" + s.id; nm.setAttribute("aria-label", "Họ tên " + s.id);
+    const ca = document.createElement("select"); ca.id = "ca_" + s.id; ca.setAttribute("aria-label", "Ca trực " + s.id);
+    CA_OPTS.forEach(o => { const op = document.createElement("option"); op.value = o; op.textContent = o; ca.appendChild(op); });
+    ca.value = CA_OPTS.indexOf(s.ca) >= 0 ? s.ca : "Nghỉ";
+    r1.append(nm, ca);
+    const idl = document.createElement("div"); idl.className = "idline"; idl.textContent = "Mã " + s.id + (s.on ? "" : " · đang tạm dừng");
+    const acts = document.createElement("div"); acts.className = "acts";
+    const lab = document.createElement("label"); lab.className = "on";
+    const on = document.createElement("input"); on.type = "checkbox"; on.checked = s.on; on.id = "on_" + s.id;
+    lab.append(on, "Đang làm");
+    const save = () => act({ action: "staffSet", id: s.id, ten: nm.value.trim(), ca: ca.value, on: on.checked ? "1" : "0" }, "Đã lưu " + s.ten);
+    const bSave = mk("Lưu", save, "primary");
+    const bCopy = mk("Sao chép link", async () => {
+      const url = staffLink(s);
+      try { await navigator.clipboard.writeText(url); toast("Đã sao chép link của " + s.ten); }
+      catch (e) { prompt1(url); }
+    });
+    const bKey = mk("Đổi mã", armed2(() => act({ action: "staffKey", id: s.id }, "Đã đổi mã, link cũ hết hiệu lực"), "Chạm lại để đổi mã"));
+    const bDel = mk("Xoá", armed2(() => act({ action: "staffDel", id: s.id }, "Đã xoá " + s.ten), "Chạm lại để xoá"));
+    acts.append(lab, bSave, bCopy, bKey, bDel);
+    row.append(r1, idl, acts);
+    box.appendChild(row);
+  });
+  if (!d.roster.length) { const p = document.createElement("p"); p.className = "hint"; p.textContent = "Chưa có nhân viên. Thêm bên dưới."; box.appendChild(p); }
+}
+function mk(text, fn, cls) {
+  const b = document.createElement("button"); b.type = "button"; b.className = "btn" + (cls ? " " + cls : ""); b.textContent = text;
+  b.addEventListener("click", fn); return b;
+}
+function armed2(fn, armedText) {
+  let t = null, orig = null;
+  return function (ev) {
+    const b = ev.currentTarget;
+    if (!t) { orig = b.textContent; b.textContent = armedText; t = setTimeout(() => { t = null; b.textContent = orig; }, 3500); return; }
+    clearTimeout(t); t = null; b.textContent = orig; fn();
+  };
+}
+function prompt1(url) {
+  const ta = document.createElement("textarea"); ta.value = url; ta.readOnly = true; ta.style.cssText = "width:100%;min-height:90px;margin-top:8px";
+  $("roster").prepend(ta); ta.select(); toast("Chọn và sao chép link trong ô vừa hiện");
+}
+function drawCfg(d) {
+  const box = $("cfgList"); box.textContent = "";
+  Object.keys(CFG_LABELS).forEach(k => {
+    const row = document.createElement("div"); row.className = "cfgrow";
+    const l = document.createElement("label"); l.textContent = CFG_LABELS[k]; l.htmlFor = "cfg_" + k;
+    const i = document.createElement("input"); i.type = "text"; i.id = "cfg_" + k; i.value = d.cfgAll[k] === undefined ? "" : d.cfgAll[k];
+    if (k !== "email") i.inputMode = "numeric"; else row.style.gridTemplateColumns = "1fr";
+    i.addEventListener("change", () => act({ action: "cfgSet", key: k, value: i.value }, "Đã lưu quy tắc"));
+    if (k === "email") { row.append(l, i); } else row.append(l, i);
+    box.appendChild(row);
+  });
+}
+
+$("addStaff").addEventListener("click", async () => {
+  const id = $("newId").value.trim(), ten = $("newName").value.trim();
+  if (!id || !ten) { toast("Nhập mã và họ tên"); return; }
+  const ok = await act({ action: "staffSet", id, ten, ca: $("newCa").value, on: "1" }, "Đã thêm " + ten);
+  if (ok) { $("newId").value = ""; $("newName").value = ""; }
+});
+$("go").addEventListener("click", load);
+$("ak").addEventListener("keydown", e => { if (e.key === "Enter") load(); });
+$("sound").addEventListener("click", () => {
+  try { actx = actx || new (window.AudioContext || window.webkitAudioContext)(); actx.resume(); soundOn = true; $("sound").textContent = "Chuông đã bật"; beep(); } catch (e) {}
+});
+setInterval(() => { $("clock").textContent = hhmm(Date.now()); }, 1000);
+$("clock").textContent = hhmm(Date.now());
+try { const k = localStorage.getItem(AK); if (k) { $("ak").value = k; load(); } } catch (e) {}
+</script>
+</body>
+</html>
