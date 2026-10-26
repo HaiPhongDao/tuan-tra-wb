@@ -12,7 +12,7 @@ Gồm ba phần:
 4. Ở cột trái chọn **Cài đặt dự án** (bánh răng), đặt **Múi giờ** là `(GMT+07:00) Bangkok, Hanoi, Jakarta`.
 5. Quay lại **Trình chỉnh sửa**, chọn hàm `khoiTao` ở thanh trên, bấm **Chạy**, cấp quyền khi Google hỏi.
    - Google có thể hiện "Ứng dụng chưa được xác minh". Bấm **Nâng cao > Đi tới ... (không an toàn)**. Đây là mã của chính bạn.
-6. Chạy tiếp hàm `caiTrigger` để bật email cảnh báo mỗi 10 phút.
+6. Email cảnh báo đỏ **mặc định tắt**. Muốn dùng thì đặt `emailOn` = 1 ở mục Quy tắc báo đỏ của trang trưởng ca, rồi chạy hàm `caiTrigger` một lần. Muốn tắt hẳn thì chạy `xoaTrigger`.
 
 ## Bước 2. Triển khai thành ứng dụng web
 1. Bấm **Triển khai > Tuỳ chọn triển khai mới**, loại **Ứng dụng web**.

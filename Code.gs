@@ -19,6 +19,7 @@ const CFG_DEFAULTS = [
   ['dayStartHour', 6, 'Giờ bắt đầu Ca Ngày'],
   ['nightStartHour', 18, 'Giờ bắt đầu Ca Đêm'],
   ['email', '', 'Email nhận cảnh báo đỏ. Để trống thì dùng email của chủ Sheet.'],
+  ['emailOn', 0, '1 = gửi email cảnh báo đỏ. 0 = tắt (mặc định)'],
   ['requireQr', 0, '1 = chỉ nhận lần chạm có quét đúng mã QR của điểm. 0 = cho phép chạm tay']
 ];
 
@@ -46,6 +47,10 @@ function khoiTao() {
   const s1 = ss.getSheetByName('Sheet1') || ss.getSheetByName('Trang tính1');
   if (s1 && s1.getLastRow() === 0 && ss.getSheets().length > 1) ss.deleteSheet(s1);
   SpreadsheetApp.getUi().alert('Xong. Mở trang CauHinh để lấy adminKey, trang NhanVien để quản lý nhân viên và ca trực.');
+}
+
+function xoaTrigger() {
+  ScriptApp.getProjectTriggers().filter(t => t.getHandlerFunction() === 'kiemTra').forEach(t => ScriptApp.deleteTrigger(t));
 }
 
 function caiTrigger() {
@@ -159,7 +164,7 @@ function actDash_(p) {
   return Object.assign({ ok: true }, dashboard_(Date.now(), true), { roster: staffList_(), cfgAll: cfg });
 }
 
-const EDITABLE_CFG = ['gapMin', 'tolMin', 'startGraceMin', 'roundGraceMin', 'minRounds', 'dayStartHour', 'nightStartHour', 'email', 'requireQr'];
+const EDITABLE_CFG = ['gapMin', 'tolMin', 'startGraceMin', 'roundGraceMin', 'minRounds', 'dayStartHour', 'nightStartHour', 'email', 'emailOn', 'requireQr'];
 const CA_VALUES = ['Ngày', 'Đêm', 'Cả hai', 'Nghỉ', ''];
 
 function staffRowIndex_(id) {
@@ -419,13 +424,14 @@ function dashboard_(now, withKeys) {
 
 /* ---------- Cảnh báo email (chạy mỗi 10 phút nhờ caiTrigger) ---------- */
 function kiemTra() {
+  if (Number(cfgMap_().emailOn) !== 1) return;
   const d = dashboard_(Date.now(), false);
   const props = PropertiesService.getScriptProperties();
   const sent = JSON.parse(props.getProperty('sent') || '{}');
   const fresh = [];
   d.staff.forEach(s => {
     if (s.level !== 'red') return;
-    const key = s.id + '|' + d.win.start + '|' + s.reasons.join(';');
+    const key = s.id + '|' + d.win.start + '|' + s.reasons.map(r => r.replace(/[0-9]+/g, '#')).join(';');
     if (!sent[key]) { sent[key] = Date.now(); fresh.push(s); }
   });
   Object.keys(sent).forEach(k => { if (Date.now() - sent[k] > 2 * 86400000) delete sent[k]; });
