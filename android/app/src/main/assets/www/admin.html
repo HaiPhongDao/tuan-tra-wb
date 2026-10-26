@@ -160,6 +160,12 @@ select, .staffrow input[type=text], .addbox input[type=text] { width: 100%; min-
     <p class="hint">Mỗi nhân viên có link riêng kèm mã bí mật. Gửi riêng từng người, không gửi vào nhóm chung. "Đổi mã" làm link cũ ngừng hoạt động. Chỉ người có ca trực khớp ca hiện tại mới bị tính báo đỏ.</p>
   </details>
 
+  <div class="panel" id="qrLinkBox">
+    <b>Mã QR từng vị trí</b>
+    <p class="hint" style="margin:6px 0 10px">In mã dán tại mỗi điểm. Nhân viên quét là ghi nhận ngay, không cần chạm tay.</p>
+    <a class="btn primary" style="display:inline-flex;align-items:center;text-decoration:none" href="qr.html">Mở trang in mã QR</a>
+  </div>
+
   <details class="panel" id="cfgBox">
     <summary>Quy tắc báo đỏ</summary>
     <div id="cfgList"></div>
@@ -243,6 +249,7 @@ function draw(d) {
     add("Điểm:", s.last ? s.last.area : "-");
     if (s.nextDue) add("Vòng kế tiếp:", hhmm(s.nextDue));
     if (s.cancels) add("Đã huỷ:", s.cancels + " lần chạm");
+    if (s.viaQr || s.manual) add("Quét QR / chạm tay:", (s.viaQr || 0) + " / " + (s.manual || 0));
     if (s.prev) add("Ca " + s.prev.label + " trước:", Object.keys(s.prev.lanes).map(k => s.prev.lanes[k].name.replace("Tuần ", "") + " " + s.prev.lanes[k].complete + "/" + s.minRounds).join(", "));
     c.appendChild(meta);
     Object.keys(s.lanes || {}).forEach(k => {
@@ -257,7 +264,7 @@ function draw(d) {
   const rc = $("recent"); rc.textContent = "";
   d.recent.forEach(x => {
     const li = document.createElement("li"); if (x.cancelled) li.className = "cx";
-    const l = document.createElement("span"); l.textContent = x.ten + " · " + (x.lane === "loi" ? "Lõi" : "Hầm") + " V" + x.round + " · " + x.area + (x.cancelled ? " (đã huỷ)" : "");
+    const l = document.createElement("span"); l.textContent = x.ten + " · " + (x.lane === "loi" ? "Lõi" : "Hầm") + " V" + x.round + " · " + x.area + (x.via === "qr" ? " · QR" : " · tay") + (x.cancelled ? " (đã huỷ)" : "");
     const t = document.createElement("time"); t.textContent = hhmm(x.t);
     li.append(l, t); rc.appendChild(li);
   });
@@ -271,7 +278,7 @@ const CA_OPTS = ["Ngày", "Đêm", "Cả hai", "Nghỉ"];
 const CFG_LABELS = {
   gapMin: "Phút giữa hai vòng", tolMin: "Dung sai trước khi báo đỏ quá giờ (phút)", startGraceMin: "Chờ tín hiệu đầu ca (phút)",
   roundGraceMin: "Chờ đủ điểm trong một vòng (phút)", minRounds: "Số vòng tối thiểu mỗi ca", dayStartHour: "Giờ bắt đầu Ca Ngày",
-  nightStartHour: "Giờ bắt đầu Ca Đêm", email: "Email nhận cảnh báo"
+  nightStartHour: "Giờ bắt đầu Ca Đêm", requireQr: "Chỉ nhận lần quét QR (1 = bật, 0 = cho chạm tay)", email: "Email nhận cảnh báo"
 };
 let keyForCalls = "";
 function toast(t) {

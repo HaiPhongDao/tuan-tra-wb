@@ -150,6 +150,17 @@ body { margin: 0; }
 .lanebar { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; background: var(--line); border-radius: 14px; padding: 5px; }
 .lanebar button { min-height: 48px; border: 0; border-radius: 10px; background: transparent; font-weight: 600; font-size: 16px; color: var(--muted); }
 .lanebar button[aria-selected="true"] { background: var(--surface); color: var(--fg); box-shadow: var(--shadow); }
+.scanbtn { width: 100%; min-height: 56px; border: 0; border-radius: 14px; background: var(--accent); color: var(--accent-fg); font-weight: 700; font-size: 18px; box-shadow: var(--shadow); }
+.full { position: fixed; inset: 0; z-index: 40; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; padding: 24px; text-align: center; background: var(--accent); color: var(--accent-fg); }
+.full.bad { background: var(--warn); color: #fff; }
+.full .tick { width: 96px; height: 96px; border-radius: 50%; display: grid; place-items: center; font-size: 60px; background: rgba(255,255,255,.2); }
+.full .big { font-family: var(--font-display); font-size: 34px; line-height: 1.1; font-weight: 700; text-transform: uppercase; overflow-wrap: anywhere; }
+.full .sub { font-size: 17px; opacity: .92; }
+.full .btn { margin-top: 12px; min-width: 160px; background: rgba(255,255,255,.2); color: inherit; border-color: rgba(255,255,255,.5); }
+#scanner { position: fixed; inset: 0; z-index: 45; background: #000; display: flex; flex-direction: column; }
+#scanner video { flex: 1; width: 100%; object-fit: cover; min-height: 0; }
+#scanner .bar { padding: 14px 16px calc(14px + env(safe-area-inset-bottom, 0px)); display: flex; gap: 10px; align-items: center; background: #000; color: #fff; }
+#scanner .bar span { flex: 1; font-size: 15px; }
 .sync { font-size: 13px; color: var(--muted); padding: 2px 2px 0; }
 .sync.bad { color: var(--warn); font-weight: 600; }
 </style>
@@ -187,6 +198,8 @@ body { margin: 0; }
     <div class="segs" id="segs"></div>
     <div class="heroline"><span id="whoLine"></span></div>
   </section>
+
+  <button class="scanbtn" id="scanBtn" type="button">Quét mã QR tại điểm</button>
 
   <div class="lanebar" id="laneBar" role="tablist" aria-label="Chọn tuyến tuần tra">
     <button type="button" role="tab" id="laneHam" data-lane="ham">Tuần hầm</button>
@@ -260,6 +273,27 @@ body { margin: 0; }
   </details>
 </main>
 
+<div class="full" id="okBox" role="status" hidden>
+  <div class="tick" aria-hidden="true">✓</div>
+  <div class="big" id="okTitle">Đã ghi nhận</div>
+  <div class="sub" id="okArea"></div>
+  <div class="sub" id="okNext"></div>
+  <button class="btn" id="okClose" type="button">Đóng</button>
+</div>
+<div class="full bad" id="errBox" role="alert" hidden>
+  <div class="tick" aria-hidden="true">!</div>
+  <div class="big" id="errTitle"></div>
+  <div class="sub" id="errMsg"></div>
+  <div style="display:flex;gap:10px;flex-wrap:wrap;justify-content:center">
+    <button class="btn" id="errClose" type="button">Đóng</button>
+    <button class="btn" id="errForce" type="button" hidden>Vẫn ghi nhận lại</button>
+  </div>
+</div>
+<div id="scanner" hidden>
+  <video id="scanVideo" playsinline muted></video>
+  <div class="bar"><span id="scanMsg">Hướng camera vào mã QR tại điểm</span><button class="btn" id="scanStop" type="button">Đóng</button></div>
+</div>
+
 <div class="modal" id="confirm" role="dialog" aria-modal="true" aria-labelledby="cfTitle" hidden>
   <div>
     <h2 id="cfTitle">Xác nhận đã tới điểm</h2>
@@ -292,6 +326,17 @@ const ITEMS = [
 const DEFAULT_ROUTE = ["Tùy chọn 2","MẶT SAU THÁP A WB","BÃI XE HẦM THÁP B WB","MẶT SAU THÁP B WB","LỐI VÀO HẦM CLB WB","BÃI XE HẦM C WB","BÃI XE HẦM D WB","MẶT SAU THÁP C WB"];
 const LOI_ROUTE = ["TẦNG 12 THÁP A","TẦNG MÁI THÁP A","TẦNG 12 THÁP B","TẦNG MÁI THÁP B","TẦNG 12 THÁP C","TẦNG MÁI THÁP C","TẦNG 12 THÁP D","TẦNG MÁI THÁP D"];
 const LANE_NAMES = { ham: "Tuần hầm", loi: "Tuần lõi" };
+const SCAN = (function () {
+  try {
+    const q = new URLSearchParams(location.search);
+    const a = q.get("a"), t = q.get("qt");
+    if (a !== null && t) {
+      if (!q.get("u")) history.replaceState(null, "", location.pathname);
+      return { a: Number(a), t: t };
+    }
+  } catch (e) {}
+  return null;
+})();
 const KEY = "tuantra_west_bay_v1";
 const $ = id => document.getElementById(id);
 const disp = a => a === "Tùy chọn 2" ? "BÃI XE HẦM A (Tùy chọn 2)" : a;
@@ -438,7 +483,7 @@ setInterval(flushForm, 30000);
 let flushing = false, syncState = "";
 function reportTap(e) {
   if (!S.cred || e.test) return;
-  S.outbox.push({ action: "tap", u: S.cred.u, k: S.cred.k, id: e.id, t: e.t, area: e.area, round: e.round, lane: e.lane || "ham", shift: e.shift, route: JSON.stringify(P().route) });
+  S.outbox.push(Object.assign({ action: "tap", u: S.cred.u, k: S.cred.k, id: e.id, t: e.t, area: e.area, round: e.round, lane: e.lane || "ham", shift: e.shift, route: JSON.stringify(P().route) }, e.via === "qr" ? { a: e.qa, qt: e.qt } : {}));
   save(); flush();
 }
 function reportCancel(e) {
@@ -456,6 +501,7 @@ async function flush() {
       const j = await r.json();
       if (j.ok || j.err === "dup" || j.err === "missing") { S.outbox.shift(); save(); }
       else if (j.err === "key") { syncState = "key"; break; }
+      else if (j.err === "qr" || j.err === "qrbad") { S.outbox.shift(); save(); syncState = j.err; }
       else { syncState = "net"; break; }
     } catch (err) { syncState = "net"; break; }
   }
@@ -468,6 +514,8 @@ function setSync() {
   el.hidden = false; el.classList.remove("bad");
   if (!CFG.SCRIPT_URL) { el.textContent = "Chưa nối với trưởng ca"; el.classList.add("bad"); }
   else if (S.test) el.textContent = "Chế độ thử: không báo về trưởng ca";
+  else if (syncState === "qr") { el.textContent = "Trưởng ca yêu cầu quét mã QR, lần chạm tay vừa rồi không được ghi nhận"; el.classList.add("bad"); }
+  else if (syncState === "qrbad") { el.textContent = "Mã QR không đúng hoặc đã bị đổi, lần quét vừa rồi không được ghi nhận"; el.classList.add("bad"); }
   else if (syncState === "key") { el.textContent = "Mã nhân viên không hợp lệ, báo trưởng ca"; el.classList.add("bad"); }
   else if (S.outbox.length) { el.textContent = "Chờ báo về trưởng ca: " + S.outbox.length + " lần chạm (sẽ tự gửi lại khi có mạng)"; el.classList.add("bad"); }
   else el.textContent = "Đã báo về trưởng ca";
@@ -504,14 +552,15 @@ function tapSpot(area) {
   $("cfNo").onclick = () => { $("confirm").hidden = true; };
   $("cfYes").focus();
 }
-function doTap(area) {
+function doTap(area, qr) {
   const { r } = currentRound();
   const now = new Date();
   const bad = Array.from(document.querySelectorAll("#items input:checked")).map(i => i.value);
   const entry = {
-    pid: P().id, mode: S.mode === "send" ? "send" : S.mode === "auto" ? "auto" : "fill", skip: (S.skip[area] || []).slice(), t: now.getTime(), key: shiftKey(now), shift: shiftAt(now), round: r, area, lane: P().lane, name: P().name.trim(),
+    pid: P().id, mode: S.mode === "send" ? "send" : S.mode === "auto" ? "auto" : "fill", skip: (S.skip[area] || []).slice(), t: now.getTime(), key: shiftKey(now), shift: shiftAt(now), round: r, area, lane: P().lane, via: qr ? "qr" : "tay", name: P().name.trim(),
     bad, t667: $("t667").value.trim(), t7: $("t7").value.trim(), t8: $("t8").value.trim()
   };
+  if (qr) { entry.qa = qr.a; entry.qt = qr.t; }
   entry.id = (S.cred ? S.cred.u : "x") + "-" + entry.t;
   if (S.test) entry.test = true;
   S.log.push(entry);
@@ -809,7 +858,106 @@ function loadProfileUI() {
   $("laneLoi").setAttribute("aria-selected", p.lane === "loi" ? "true" : "false");
   fillProf();
 }
+// ---- Quét mã QR tại điểm: không cần xác nhận, quét xong là ghi nhận.
+let okTimer = null;
+function showOk(area, nextArea) {
+  $("okArea").textContent = disp(area) + " · " + fmt(new Date());
+  $("okNext").textContent = nextArea ? "Điểm kế: " + disp(nextArea) : "Đã đủ điểm của vòng này";
+  $("okBox").hidden = false;
+  try { navigator.vibrate && navigator.vibrate([120, 60, 120]); } catch (e) {}
+  clearTimeout(okTimer); okTimer = setTimeout(() => { $("okBox").hidden = true; }, 4500);
+}
+function showErr(title, msg, force) {
+  $("errTitle").textContent = title; $("errMsg").textContent = msg;
+  $("errForce").hidden = !force; $("errForce").onclick = () => { $("errBox").hidden = true; if (force) force(); };
+  $("errBox").hidden = false;
+  try { navigator.vibrate && navigator.vibrate([400, 150, 400]); } catch (e) {}
+}
+function handleScan(sc) {
+  const area = AREAS[sc.a];
+  if (!area) { showErr("Mã QR không hợp lệ", "Không nhận ra điểm này. Báo trưởng ca."); return; }
+  if (!P().name.trim()) { showErr("Chưa có tên", "Mở link riêng của bạn do trưởng ca gửi một lần trên máy này, hoặc nhập tên trong Cài đặt."); return; }
+  const p = P();
+  const lane = p.routes.ham.indexOf(area) >= 0 ? "ham" : p.routes.loi.indexOf(area) >= 0 ? "loi" : null;
+  if (!lane) { showErr("Điểm không thuộc tuyến", disp(area) + " không nằm trong Tuần hầm hay Tuần lõi của bạn."); return; }
+  if (lane !== p.lane) switchLane(lane);
+  unlockAudio();
+  const { r, done } = currentRound();
+  const hit = shiftLog().filter(e => e.round === r && e.area === area).pop();
+  const record = () => {
+    doTap(area, { a: sc.a, t: sc.t });
+    const nd = currentRound();
+    showOk(area, P().route.find(a => !nd.done.has(a)));
+  };
+  if (done.has(area) && hit) {
+    showErr("Điểm đã quét", disp(area) + " đã quét lúc " + fmt(new Date(hit.t)) + " trong vòng này.", record);
+    return;
+  }
+  record();
+}
+function parseScanText(txt) {
+  try {
+    const u = new URL(txt, location.href);
+    const a = u.searchParams.get("a"), t = u.searchParams.get("qt");
+    if (a !== null && t) return { a: Number(a), t: t };
+  } catch (e) {}
+  return null;
+}
+let scanStream = null, scanTimer = null;
+function stopScanner() {
+  clearTimeout(scanTimer); scanTimer = null;
+  if (scanStream) { scanStream.getTracks().forEach(t => t.stop()); scanStream = null; }
+  $("scanner").hidden = true;
+}
+function loadJsQR() {
+  return new Promise((res, rej) => {
+    if (window.jsQR) return res();
+    const sc = document.createElement("script");
+    sc.src = "https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js";
+    sc.onload = res; sc.onerror = () => rej(new Error("jsQR"));
+    document.head.appendChild(sc);
+  });
+}
+async function startScanner() {
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) { showErr("Không mở được camera", "Trình duyệt này không cho dùng camera. Hãy quét bằng ứng dụng Camera của máy."); return; }
+  try {
+    scanStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: "environment" } }, audio: false });
+  } catch (e) { showErr("Chưa cho dùng camera", "Cho phép camera cho trang này, hoặc quét bằng ứng dụng Camera của máy."); return; }
+  const v = $("scanVideo"); v.srcObject = scanStream; await v.play().catch(() => {});
+  $("scanner").hidden = false; $("scanMsg").textContent = "Hướng camera vào mã QR tại điểm";
+  let det = null;
+  try { if ("BarcodeDetector" in window) det = new BarcodeDetector({ formats: ["qr_code"] }); } catch (e) {}
+  if (!det) { try { await loadJsQR(); } catch (e) { stopScanner(); showErr("Không tải được bộ đọc QR", "Cần mạng lần đầu. Hãy quét bằng ứng dụng Camera của máy."); return; } }
+  const cv = document.createElement("canvas"), cx = cv.getContext("2d", { willReadFrequently: true });
+  const tick = async () => {
+    if (!scanStream) return;
+    try {
+      let text = null;
+      if (v.videoWidth) {
+        if (det) { const r = await det.detect(v); if (r.length) text = r[0].rawValue; }
+        else {
+          cv.width = v.videoWidth; cv.height = v.videoHeight; cx.drawImage(v, 0, 0);
+          const code = window.jsQR(cx.getImageData(0, 0, cv.width, cv.height).data, cv.width, cv.height);
+          if (code) text = code.data;
+        }
+      }
+      if (text) {
+        const sc = parseScanText(text);
+        if (sc) { stopScanner(); handleScan(sc); return; }
+        $("scanMsg").textContent = "Mã này không phải mã điểm tuần tra";
+      }
+    } catch (e) {}
+    scanTimer = setTimeout(tick, 150);
+  };
+  tick();
+}
+$("scanBtn").addEventListener("click", startScanner);
+$("scanStop").addEventListener("click", stopScanner);
+$("okClose").addEventListener("click", () => { $("okBox").hidden = true; });
+$("errClose").addEventListener("click", () => { $("errBox").hidden = true; });
+
 buildStatic(); loadProfileUI(); render(); setSync(); flush();
+if (SCAN) handleScan(SCAN);
 if (window.Android) {
   const btnBat = $("btnAndroidBattery");
   const hint = $("androidHint");

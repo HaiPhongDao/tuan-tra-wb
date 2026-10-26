@@ -6,6 +6,8 @@ const TZ_OFFSET_H = 7; // Việt Nam, không có giờ mùa hè
 const SHEET_NV = 'NhanVien';
 const SHEET_LOG = 'NhatKy';
 const SHEET_CFG = 'CauHinh';
+const SHEET_PT = 'DiemQuet';
+const AREAS = ["BỂ BƠI WEST BAY", "Tùy chọn 2", "MẶT SAU THÁP A WB", "BÃI XE HẦM THÁP B WB", "MẶT SAU THÁP B WB", "LỐI VÀO HẦM CLB WB", "BÃI XE HẦM C WB", "BÃI XE HẦM D WB", "MẶT SAU THÁP C WB", "LỐI VÀO TẦNG 01 NHÀ XE AB WB", "TẦNG MÁI NHÀ XE AB", "LỐI RA TẦNG 01 NHÀ XE AB WB", "LỐI VÀO TẦNG 01 NHÀ XE CD WB", "TẦNG MÁI NHÀ XE CD", "LỐI RA TẦNG 01 NHÀ XE CD", "TẦNG 12 THÁP A", "TẦNG MÁI THÁP A", "TẦNG 12 THÁP B", "TẦNG MÁI THÁP B", "TẦNG 12 THÁP C", "TẦNG MÁI THÁP C", "TẦNG 12 THÁP D", "TẦNG MÁI THÁP D"];
 
 const CFG_DEFAULTS = [
   ['adminKey', '', 'Mã của trưởng ca để mở trang giám sát. Tự tạo khi chạy khoiTao().'],
@@ -16,7 +18,8 @@ const CFG_DEFAULTS = [
   ['minRounds', 6, 'Số vòng tối thiểu mỗi ca'],
   ['dayStartHour', 6, 'Giờ bắt đầu Ca Ngày'],
   ['nightStartHour', 18, 'Giờ bắt đầu Ca Đêm'],
-  ['email', '', 'Email nhận cảnh báo đỏ. Để trống thì dùng email của chủ Sheet.']
+  ['email', '', 'Email nhận cảnh báo đỏ. Để trống thì dùng email của chủ Sheet.'],
+  ['requireQr', 0, '1 = chỉ nhận lần chạm có quét đúng mã QR của điểm. 0 = cho phép chạm tay']
 ];
 
 /* ---------- Cài đặt lần đầu ---------- */
@@ -30,7 +33,7 @@ function khoiTao() {
   }
   let lg = ss.getSheetByName(SHEET_LOG) || ss.insertSheet(SHEET_LOG);
   if (lg.getLastRow() === 0) {
-    lg.appendRow(['id', 'gio_may_chu', 'gio_may_nv', 'uid', 'ten', 'ca', 'vong', 'khu_vuc', 'thu', 'huy', 'tuyen', 'loai_tuan']);
+    lg.appendRow(['id', 'gio_may_chu', 'gio_may_nv', 'uid', 'ten', 'ca', 'vong', 'khu_vuc', 'thu', 'huy', 'tuyen', 'loai_tuan', 'qua']);
     lg.setFrozenRows(1);
   }
   let cf = ss.getSheetByName(SHEET_CFG) || ss.insertSheet(SHEET_CFG);
@@ -50,6 +53,20 @@ function caiTrigger() {
   ScriptApp.newTrigger('kiemTra').timeBased().everyMinutes(10).create();
 }
 
+/* Bảng DiemQuet: mỗi điểm một mã bí mật in trong QR. Tự tạo khi cần. */
+function ensurePoints_() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  let sh = ss.getSheetByName(SHEET_PT);
+  if (!sh) { sh = ss.insertSheet(SHEET_PT); sh.appendRow(['stt', 'khu_vuc', 'ma']); sh.setFrozenRows(1); }
+  const have = sh.getLastRow() > 1 ? sh.getRange(2, 1, sh.getLastRow() - 1, 3).getValues() : [];
+  const map = {};
+  have.forEach(r => { map[String(r[0])] = { area: String(r[1]), token: String(r[2]) }; });
+  const add = [];
+  AREAS.forEach((a, i) => { if (!map[String(i)]) { const t = randKey_().slice(0, 8); add.push([i, a, t]); map[String(i)] = { area: a, token: t }; } });
+  if (add.length) sh.getRange(sh.getLastRow() + 1, 1, add.length, 3).setValues(add);
+  return AREAS.map((a, i) => ({ i, area: a, token: map[String(i)].token }));
+}
+
 /* ---------- API ---------- */
 function doGet(e) {
   const p = (e && e.parameter) || {};
@@ -62,6 +79,8 @@ function doGet(e) {
     if (p.action === 'staffKey') return out_(actStaffKey_(p));
     if (p.action === 'staffDel') return out_(actStaffDel_(p));
     if (p.action === 'cfgSet') return out_(actCfgSet_(p));
+    if (p.action === 'pointsList') return out_(actPointsList_(p));
+    if (p.action === 'pointRotate') return out_(actPointRotate_(p));
     return out_({ ok: false, err: 'action' });
   } catch (err) {
     return out_({ ok: false, err: 'server', msg: String(err) });
@@ -77,6 +96,13 @@ function actTap_(p) {
   if (!nv) return { ok: false, err: 'key' };
   const id = String(p.id || '');
   if (!id) return { ok: false, err: 'id' };
+  let via = 'tay', area = p.area || '';
+  if (p.a !== undefined && p.a !== '' && p.qt) {
+    const pt = ensurePoints_()[Number(p.a)];
+    if (!pt || pt.token !== String(p.qt)) return { ok: false, err: 'qrbad' };
+    via = 'qr'; area = pt.area;
+  }
+  if (via !== 'qr' && Number(cfgMap_().requireQr) === 1) return { ok: false, err: 'qr' };
   const lock = LockService.getScriptLock();
   lock.waitLock(20000);
   try {
@@ -87,7 +113,7 @@ function actTap_(p) {
       const ids = sh.getRange(from, 1, n - from + 1, 1).getValues();
       for (let i = 0; i < ids.length; i++) if (String(ids[i][0]) === id) return { ok: false, err: 'dup' };
     }
-    sh.appendRow([id, new Date(), Number(p.t) || '', nv.id, nv.ten, p.shift || '', Number(p.round) || 1, p.area || '', '', '', p.route || '', p.lane === 'loi' ? 'loi' : 'ham']);
+    sh.appendRow([id, new Date(), Number(p.t) || '', nv.id, nv.ten, p.shift || '', Number(p.round) || 1, area, '', '', p.route || '', p.lane === 'loi' ? 'loi' : 'ham', via]);
   } finally { lock.releaseLock(); }
   return { ok: true };
 }
@@ -126,7 +152,7 @@ function actDash_(p) {
   return Object.assign({ ok: true }, dashboard_(Date.now(), true), { roster: staffList_(), cfgAll: cfg });
 }
 
-const EDITABLE_CFG = ['gapMin', 'tolMin', 'startGraceMin', 'roundGraceMin', 'minRounds', 'dayStartHour', 'nightStartHour', 'email'];
+const EDITABLE_CFG = ['gapMin', 'tolMin', 'startGraceMin', 'roundGraceMin', 'minRounds', 'dayStartHour', 'nightStartHour', 'email', 'requireQr'];
 const CA_VALUES = ['Ngày', 'Đêm', 'Cả hai', 'Nghỉ', ''];
 
 function staffRowIndex_(id) {
@@ -180,6 +206,22 @@ function actStaffDel_(p) {
     f.sh.deleteRow(f.row);
   } finally { lock.releaseLock(); }
   return { ok: true };
+}
+
+function actPointsList_(p) {
+  if (!adminOk_(p)) return { ok: false, err: 'admin' };
+  return { ok: true, points: ensurePoints_() };
+}
+
+function actPointRotate_(p) {
+  if (!adminOk_(p)) return { ok: false, err: 'admin' };
+  const i = Number(p.i);
+  if (!isFinite(i) || i < 0 || i >= AREAS.length) return { ok: false, err: 'i' };
+  ensurePoints_();
+  const sh = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SHEET_PT);
+  const vals = sh.getRange(2, 1, sh.getLastRow() - 1, 1).getValues();
+  for (let r = 0; r < vals.length; r++) if (String(vals[r][0]) === String(i)) { sh.getRange(r + 2, 3).setValue(randKey_().slice(0, 8)); return { ok: true }; }
+  return { ok: false, err: 'missing' };
 }
 
 function actCfgSet_(p) {
@@ -253,9 +295,9 @@ function readTaps_(sinceMs) {
   const n = sh.getLastRow();
   if (n < 2) return [];
   const from = Math.max(2, n - 3000);
-  return sh.getRange(from, 1, n - from + 1, 12).getValues().map(r => ({
+  return sh.getRange(from, 1, n - from + 1, 13).getValues().map(r => ({
     id: String(r[0]), t: r[1] instanceof Date ? r[1].getTime() : 0, uid: String(r[3]), ten: String(r[4]),
-    shift: String(r[5]), round: Number(r[6]) || 1, area: String(r[7]), test: String(r[8]) !== '', cancelled: String(r[9]) !== '', route: String(r[10]), lane: String(r[11]) === 'loi' ? 'loi' : 'ham'
+    shift: String(r[5]), round: Number(r[6]) || 1, area: String(r[7]), test: String(r[8]) !== '', cancelled: String(r[9]) !== '', route: String(r[10]), lane: String(r[11]) === 'loi' ? 'loi' : 'ham', via: String(r[12]) === 'qr' ? 'qr' : 'tay'
   })).filter(x => x.t >= sinceMs);
 }
 
@@ -321,6 +363,8 @@ function dashboard_(now, withKeys) {
     const onDuty = ca === label || ca === 'cả hai' || ca === 'ca hai';
     const row = { id: s.id, ten: s.ten, ca: s.ca, onDuty, cancels, level: 'off', reasons: [], minRounds, lanes: {}, rounds: 0, complete: 0 };
     if (withKeys) row.ma = s.ma;
+    row.manual = inWin.filter(x => x.via !== 'qr').length;
+    row.viaQr = inWin.length - row.manual;
     if (onDuty || inWin.length) {
       let level = 'ok', last = null, nextDue = null;
       LANES.forEach(L => {
@@ -356,7 +400,7 @@ function dashboard_(now, withKeys) {
     }
     return row;
   });
-  const recent = taps.sort((a, b) => b.t - a.t).slice(0, 40).map(x => ({ id: x.id, t: x.t, uid: x.uid, ten: x.ten, area: x.area, round: x.round, lane: x.lane, cancelled: x.cancelled }));
+  const recent = taps.sort((a, b) => b.t - a.t).slice(0, 40).map(x => ({ id: x.id, t: x.t, uid: x.uid, ten: x.ten, area: x.area, round: x.round, lane: x.lane, via: x.via, cancelled: x.cancelled }));
   return { now, win: { label: win.label, start: win.start, end: win.end }, staff: rows, recent, cfg: { gapMin: Number(c.gapMin), minRounds } };
 }
 

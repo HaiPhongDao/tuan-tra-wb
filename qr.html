@@ -1,0 +1,143 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>In Mã QR Tuần Tra</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700&family=Barlow:wght@400;500;600&display=swap">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcode-generator/1.4.4/qrcode.min.js"></script>
+<script src="config.js?v=2"></script>
+<style>
+/* Bố cục: thanh chọn tuyến ở trên (chỉ hiện trên màn hình), lưới thẻ mã QR bên dưới. Mỗi thẻ có tên điểm lớn, mã QR, nhãn tuyến; khi in thì mỗi trang A4 xếp 2 cột. */
+:root {
+  --bg: #e9ede8; --surface: #fbfcfa; --fg: #17211c; --muted: #5a675f; --line: #d2d9d1;
+  --accent: #0b5d4b; --accent-2: #0f7a62; --accent-fg: #ffffff; --warn: #b24b12;
+  --shadow: 0 1px 2px rgba(20,40,30,.10), 0 4px 14px rgba(20,40,30,.07);
+  --font-display: "Barlow Condensed", "Arial Narrow", sans-serif;
+  --font-body: "Barlow", system-ui, sans-serif;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) { --bg: #0e1411; --surface: #18211c; --fg: #e6ece7; --muted: #96a69c; --line: #2a362f; --accent: #1b6f5a; --accent-2: #2a8a71; --warn: #f2a677; color-scheme: dark; }
+}
+:root[data-theme="dark"] { --bg: #0e1411; --surface: #18211c; --fg: #e6ece7; --muted: #96a69c; --line: #2a362f; --accent: #1b6f5a; --accent-2: #2a8a71; --warn: #f2a677; color-scheme: dark; }
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--fg); font-family: var(--font-body); font-size: 16px; line-height: 1.4; padding-block: 14px 48px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+main { max-width: 900px; margin: 0 auto; display: flex; flex-direction: column; gap: 14px; }
+h1 { font-family: var(--font-display); font-size: 22px; text-transform: uppercase; letter-spacing: .03em; margin: 0; }
+.sub { font-size: 13px; color: var(--muted); }
+.controls { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 14px; box-shadow: var(--shadow); display: grid; gap: 10px; }
+.controls label { display: flex; gap: 10px; align-items: center; min-height: 36px; }
+.controls input[type=checkbox] { width: 22px; height: 22px; accent-color: var(--accent-2); }
+.row { display: flex; gap: 8px; flex-wrap: wrap; }
+.btn { min-height: 44px; padding: 10px 16px; border-radius: 10px; border: 1px solid var(--line); background: var(--surface); color: var(--fg); font: inherit; font-weight: 500; cursor: pointer; }
+.btn.primary { background: var(--accent); color: var(--accent-fg); border-color: var(--accent); }
+.btn.small { min-height: 36px; padding: 6px 10px; font-size: 14px; }
+.msg { color: var(--warn); font-weight: 600; }
+.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 12px; }
+.card { background: #fff; color: #111; border: 2px solid #111; border-radius: 14px; padding: 14px; display: flex; flex-direction: column; align-items: center; gap: 8px; text-align: center; break-inside: avoid; }
+.card .lane { font-size: 12px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; border: 1.5px solid #111; border-radius: 999px; padding: 2px 10px; }
+.card .name { font-family: var(--font-display); font-size: 24px; line-height: 1.1; font-weight: 700; text-transform: uppercase; overflow-wrap: anywhere; }
+.card svg { width: 100%; max-width: 200px; height: auto; display: block; }
+.card .how { font-size: 12px; color: #333; }
+.card .tools { display: flex; gap: 6px; }
+@media print {
+  :root { color-scheme: light; }
+  body { background: #fff; padding: 0; }
+  .noprint { display: none !important; }
+  .grid { grid-template-columns: 1fr 1fr; gap: 10mm; }
+  .card { border-radius: 6mm; padding: 8mm; }
+  .card svg { max-width: 62mm; }
+  .card .name { font-size: 20pt; }
+  .card .tools { display: none; }
+}
+</style>
+</head>
+<body>
+<main>
+  <div class="noprint">
+    <h1>Mã QR từng vị trí</h1>
+    <div class="sub">Dán mỗi mã tại đúng điểm. Nhân viên quét bằng Camera điện thoại hoặc nút "Quét mã QR" trong trang tuần tra.</div>
+  </div>
+
+  <section class="controls noprint" id="controls">
+    <label><input type="checkbox" id="fHam" checked> Tuần hầm (8 điểm)</label>
+    <label><input type="checkbox" id="fLoi" checked> Tuần lõi (8 điểm)</label>
+    <label><input type="checkbox" id="fOther"> Các điểm khác</label>
+    <div class="row">
+      <button class="btn primary" id="print" type="button">In các mã đang hiện</button>
+      <a class="btn" href="admin.html" style="text-decoration:none;display:inline-flex;align-items:center">Quay lại trang trưởng ca</a>
+    </div>
+    <div class="msg" id="msg"></div>
+    <div class="sub">Đổi mã một điểm làm mã đã in của điểm đó ngừng hoạt động, cần in và dán lại. Bật "Chỉ nhận lần quét QR" ở trang trưởng ca để chặn chạm tay.</div>
+  </section>
+
+  <section class="grid" id="grid" aria-live="polite"></section>
+</main>
+
+<script>
+const CFG = window.TUANTRA || {};
+const $ = id => document.getElementById(id);
+const HAM = ["Tùy chọn 2","MẶT SAU THÁP A WB","BÃI XE HẦM THÁP B WB","MẶT SAU THÁP B WB","LỐI VÀO HẦM CLB WB","BÃI XE HẦM C WB","BÃI XE HẦM D WB","MẶT SAU THÁP C WB"];
+const LOI = ["TẦNG 12 THÁP A","TẦNG MÁI THÁP A","TẦNG 12 THÁP B","TẦNG MÁI THÁP B","TẦNG 12 THÁP C","TẦNG MÁI THÁP C","TẦNG 12 THÁP D","TẦNG MÁI THÁP D"];
+const disp = a => a === "Tùy chọn 2" ? "BÃI XE HẦM A (Tùy chọn 2)" : a;
+let points = [], key = "";
+try { key = localStorage.getItem("tuantra_admin_key") || ""; } catch (e) {}
+
+function laneOf(a) { return HAM.indexOf(a) >= 0 ? "ham" : LOI.indexOf(a) >= 0 ? "loi" : "khac"; }
+function qrUrl(pt) {
+  const base = new URL("index.html", location.href).href.replace(/index\.html$/, "");
+  return base + "?a=" + pt.i + "&qt=" + encodeURIComponent(pt.token);
+}
+function svgFor(url) {
+  const q = qrcode(0, "M"); q.addData(url); q.make();
+  return q.createSvgTag({ cellSize: 6, margin: 2, scalable: true });
+}
+function order(a, b) {
+  const order = x => { const l = laneOf(x.area); return l === "ham" ? HAM.indexOf(x.area) : l === "loi" ? 100 + LOI.indexOf(x.area) : 200 + x.i; };
+  return order(a) - order(b);
+}
+function draw() {
+  const want = { ham: $("fHam").checked, loi: $("fLoi").checked, khac: $("fOther").checked };
+  const grid = $("grid"); grid.textContent = "";
+  points.filter(p => want[laneOf(p.area)]).sort(order).forEach(pt => {
+    const card = document.createElement("div"); card.className = "card";
+    const lane = document.createElement("span"); lane.className = "lane";
+    lane.textContent = { ham: "Tuần hầm", loi: "Tuần lõi", khac: "Điểm khác" }[laneOf(pt.area)];
+    const name = document.createElement("div"); name.className = "name"; name.textContent = disp(pt.area);
+    const holder = document.createElement("div"); holder.style.width = "100%"; holder.style.display = "flex"; holder.style.justifyContent = "center";
+    holder.innerHTML = svgFor(qrUrl(pt));
+    const how = document.createElement("div"); how.className = "how"; how.textContent = "Quét để báo đã tới điểm này";
+    const tools = document.createElement("div"); tools.className = "tools";
+    const rot = document.createElement("button"); rot.type = "button"; rot.className = "btn small"; rot.textContent = "Đổi mã";
+    let armed = null;
+    rot.addEventListener("click", async () => {
+      if (!armed) { rot.textContent = "Chạm lại để đổi"; armed = setTimeout(() => { armed = null; rot.textContent = "Đổi mã"; }, 3500); return; }
+      clearTimeout(armed); armed = null; rot.textContent = "Đang đổi...";
+      try {
+        const r = await fetch(CFG.SCRIPT_URL + "?" + new URLSearchParams({ action: "pointRotate", ak: key, i: pt.i }).toString(), { cache: "no-store" });
+        const j = await r.json();
+        if (j.ok) await load(); else { rot.textContent = "Lỗi"; }
+      } catch (e) { rot.textContent = "Mất kết nối"; }
+    });
+    tools.appendChild(rot);
+    card.append(lane, name, holder, how, tools);
+    grid.appendChild(card);
+  });
+  if (!grid.children.length) { const p = document.createElement("p"); p.className = "sub"; p.textContent = "Không có điểm nào được chọn."; grid.appendChild(p); }
+}
+async function load() {
+  if (!CFG.SCRIPT_URL) { $("msg").textContent = "Chưa có địa chỉ Apps Script trong config.js."; return; }
+  if (!key) { $("msg").textContent = "Chưa có mã trưởng ca. Mở trang trưởng ca, nhập mã rồi quay lại trang này."; return; }
+  try {
+    const r = await fetch(CFG.SCRIPT_URL + "?" + new URLSearchParams({ action: "pointsList", ak: key }).toString(), { cache: "no-store" });
+    const j = await r.json();
+    if (!j.ok) { $("msg").textContent = j.err === "admin" ? "Mã trưởng ca không đúng. Nhập lại ở trang trưởng ca." : "Lỗi máy chủ: " + (j.msg || j.err); return; }
+    $("msg").textContent = ""; points = j.points; draw();
+  } catch (e) { $("msg").textContent = "Không kết nối được. Kiểm tra mạng rồi tải lại trang."; }
+}
+["fHam", "fLoi", "fOther"].forEach(id => $(id).addEventListener("change", draw));
+$("print").addEventListener("click", () => window.print());
+load();
+</script>
+</body>
+</html>
