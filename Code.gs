@@ -30,7 +30,7 @@ function khoiTao() {
   }
   let lg = ss.getSheetByName(SHEET_LOG) || ss.insertSheet(SHEET_LOG);
   if (lg.getLastRow() === 0) {
-    lg.appendRow(['id', 'gio_may_chu', 'gio_may_nv', 'uid', 'ten', 'ca', 'vong', 'khu_vuc', 'thu', 'huy', 'tuyen']);
+    lg.appendRow(['id', 'gio_may_chu', 'gio_may_nv', 'uid', 'ten', 'ca', 'vong', 'khu_vuc', 'thu', 'huy', 'tuyen', 'loai_tuan']);
     lg.setFrozenRows(1);
   }
   let cf = ss.getSheetByName(SHEET_CFG) || ss.insertSheet(SHEET_CFG);
@@ -87,7 +87,7 @@ function actTap_(p) {
       const ids = sh.getRange(from, 1, n - from + 1, 1).getValues();
       for (let i = 0; i < ids.length; i++) if (String(ids[i][0]) === id) return { ok: false, err: 'dup' };
     }
-    sh.appendRow([id, new Date(), Number(p.t) || '', nv.id, nv.ten, p.shift || '', Number(p.round) || 1, p.area || '', '', '', p.route || '']);
+    sh.appendRow([id, new Date(), Number(p.t) || '', nv.id, nv.ten, p.shift || '', Number(p.round) || 1, p.area || '', '', '', p.route || '', p.lane === 'loi' ? 'loi' : 'ham']);
   } finally { lock.releaseLock(); }
   return { ok: true };
 }
@@ -253,9 +253,9 @@ function readTaps_(sinceMs) {
   const n = sh.getLastRow();
   if (n < 2) return [];
   const from = Math.max(2, n - 3000);
-  return sh.getRange(from, 1, n - from + 1, 11).getValues().map(r => ({
+  return sh.getRange(from, 1, n - from + 1, 12).getValues().map(r => ({
     id: String(r[0]), t: r[1] instanceof Date ? r[1].getTime() : 0, uid: String(r[3]), ten: String(r[4]),
-    shift: String(r[5]), round: Number(r[6]) || 1, area: String(r[7]), test: String(r[8]) !== '', cancelled: String(r[9]) !== '', route: String(r[10])
+    shift: String(r[5]), round: Number(r[6]) || 1, area: String(r[7]), test: String(r[8]) !== '', cancelled: String(r[9]) !== '', route: String(r[10]), lane: String(r[11]) === 'loi' ? 'loi' : 'ham'
   })).filter(x => x.t >= sinceMs);
 }
 
@@ -301,40 +301,63 @@ function evalWindow_(taps, win, now, c, live) {
   return out;
 }
 
+const LANES = [{ id: 'ham', name: 'Tuần hầm' }, { id: 'loi', name: 'Tuần lõi' }];
+const RANK_ = { off: 0, ok: 1, wait: 2, red: 3 };
+
 function dashboard_(now, withKeys) {
   const c = cfgMap_();
   const win = shiftWindow_(now, c);
   const prevWin = shiftWindow_(win.start - 1, c);
   const taps = readTaps_(prevWin.start - 3600000).filter(x => !x.test);
   const staff = staffList_().filter(s => s.on);
+  const minRounds = Number(c.minRounds);
   const rows = staff.map(s => {
     const ca = s.ca.toLowerCase();
     const label = win.label.toLowerCase(), plabel = prevWin.label.toLowerCase();
     const mine = taps.filter(x => x.uid === s.id && !x.cancelled);
-    const cur = mine.filter(x => x.t >= win.start && x.t < win.end);
-    const prev = mine.filter(x => x.t >= prevWin.start && x.t < prevWin.end);
+    const inWin = mine.filter(x => x.t >= win.start && x.t < win.end);
+    const inPrev = mine.filter(x => x.t >= prevWin.start && x.t < prevWin.end);
     const cancels = taps.filter(x => x.uid === s.id && x.cancelled && x.t >= win.start && x.t < win.end).length;
     const onDuty = ca === label || ca === 'cả hai' || ca === 'ca hai';
-    const row = { id: s.id, ten: s.ten, ca: s.ca, onDuty, cancels, level: 'off', reasons: [], rounds: 0, complete: 0, minRounds: Number(c.minRounds) };
+    const row = { id: s.id, ten: s.ten, ca: s.ca, onDuty, cancels, level: 'off', reasons: [], minRounds, lanes: {}, rounds: 0, complete: 0 };
     if (withKeys) row.ma = s.ma;
-    if (onDuty || cur.length) {
-      const e = evalWindow_(cur, win, now, c, true);
-      row.level = onDuty ? e.level : 'ok';
-      row.reasons = e.reasons; row.rounds = e.rounds; row.complete = e.complete;
-      row.nextDue = e.nextDue; row.roundStart = e.roundStart || null; row.missing = e.missing || [];
-      row.last = e.last ? { t: e.last.t, area: e.last.area, round: e.last.round } : null;
+    if (onDuty || inWin.length) {
+      let level = 'ok', last = null, nextDue = null;
+      LANES.forEach(L => {
+        const cur = inWin.filter(x => x.lane === L.id);
+        if (!onDuty && !cur.length) return;
+        const e = evalWindow_(cur, win, now, c, true);
+        e.reasons.forEach(r => row.reasons.push(L.name + ': ' + r));
+        row.lanes[L.id] = { name: L.name, level: e.level, rounds: e.rounds, complete: e.complete, nextDue: e.nextDue, missing: e.missing || [],
+          last: e.last ? { t: e.last.t, area: e.last.area, round: e.last.round } : null };
+        if (RANK_[e.level] > RANK_[level]) level = e.level;
+        row.rounds += e.rounds; row.complete += e.complete;
+        if (e.last && (!last || e.last.t > last.t)) last = { t: e.last.t, area: e.last.area, round: e.last.round };
+        if (e.nextDue && (!nextDue || e.nextDue < nextDue)) nextDue = e.nextDue;
+      });
+      row.level = onDuty ? level : 'ok';
+      row.last = last; row.nextDue = nextDue;
     }
     // Báo cáo ca vừa kết thúc, hiện trong 4 giờ đầu của ca mới.
-    if ((ca === plabel || ca === 'cả hai' || prev.length) && now - win.start < 4 * 3600000) {
-      const pe = evalWindow_(prev, prevWin, now, c, false);
-      const short = pe.complete < Number(c.minRounds);
-      row.prev = { label: prevWin.label, rounds: pe.rounds, complete: pe.complete, short, assigned: ca === plabel || ca === 'cả hai' };
-      if (short && row.prev.assigned && prev.length >= 0) { row.prevRed = true; row.reasons.push('Ca ' + prevWin.label + ' trước chỉ đủ ' + pe.complete + '/' + c.minRounds + ' vòng'); if (row.level !== 'red') row.level = 'red'; }
+    if ((ca === plabel || ca === 'cả hai' || inPrev.length) && now - win.start < 4 * 3600000) {
+      const prevLanes = {};
+      let short = false;
+      LANES.forEach(L => {
+        const pe = evalWindow_(inPrev.filter(x => x.lane === L.id), prevWin, now, c, false);
+        prevLanes[L.id] = { name: L.name, rounds: pe.rounds, complete: pe.complete };
+        if (pe.complete < minRounds) short = true;
+      });
+      const assigned = ca === plabel || ca === 'cả hai';
+      row.prev = { label: prevWin.label, lanes: prevLanes, short, assigned };
+      if (short && assigned) {
+        row.reasons.push('Ca ' + prevWin.label + ' trước chưa đủ ' + minRounds + ' vòng: ' + LANES.map(L => L.name + ' ' + prevLanes[L.id].complete + '/' + minRounds).join(', '));
+        row.level = 'red';
+      }
     }
     return row;
   });
-  const recent = taps.sort((a, b) => b.t - a.t).slice(0, 40).map(x => ({ id: x.id, t: x.t, uid: x.uid, ten: x.ten, area: x.area, round: x.round, cancelled: x.cancelled }));
-  return { now, win: { label: win.label, start: win.start, end: win.end }, staff: rows, recent, cfg: { gapMin: Number(c.gapMin), minRounds: Number(c.minRounds) } };
+  const recent = taps.sort((a, b) => b.t - a.t).slice(0, 40).map(x => ({ id: x.id, t: x.t, uid: x.uid, ten: x.ten, area: x.area, round: x.round, lane: x.lane, cancelled: x.cancelled }));
+  return { now, win: { label: win.label, start: win.start, end: win.end }, staff: rows, recent, cfg: { gapMin: Number(c.gapMin), minRounds } };
 }
 
 /* ---------- Cảnh báo email (chạy mỗi 10 phút nhờ caiTrigger) ---------- */

@@ -238,25 +238,26 @@ function draw(d) {
     const meta = document.createElement("div"); meta.className = "meta";
     const add = (k, v) => { const x = document.createElement("div"); x.append(k + " "); const bb = document.createElement("b"); bb.textContent = v; x.appendChild(bb); meta.appendChild(x); };
     add("Ca xếp:", s.ca || "chưa xếp");
-    add("Vòng đủ điểm:", s.complete + "/" + s.minRounds);
+    Object.keys(s.lanes || {}).forEach(k => { const L = s.lanes[k]; add(L.name + ":", L.complete + "/" + s.minRounds + " vòng"); });
     add("Chạm gần nhất:", s.last ? hhmm(s.last.t) : "chưa có");
     add("Điểm:", s.last ? s.last.area : "-");
     if (s.nextDue) add("Vòng kế tiếp:", hhmm(s.nextDue));
     if (s.cancels) add("Đã huỷ:", s.cancels + " lần chạm");
-    if (s.prev) add("Ca " + s.prev.label + " trước:", s.prev.complete + "/" + s.minRounds + " vòng");
+    if (s.prev) add("Ca " + s.prev.label + " trước:", Object.keys(s.prev.lanes).map(k => s.prev.lanes[k].name.replace("Tuần ", "") + " " + s.prev.lanes[k].complete + "/" + s.minRounds).join(", "));
     c.appendChild(meta);
-    if (s.minRounds) {
-      const segs = document.createElement("div"); segs.className = "segs";
-      for (let i = 0; i < s.minRounds; i++) { const q = document.createElement("i"); if (i < s.complete) q.className = "on"; segs.appendChild(q); }
+    Object.keys(s.lanes || {}).forEach(k => {
+      const L = s.lanes[k];
+      const segs = document.createElement("div"); segs.className = "segs"; segs.title = L.name;
+      for (let i = 0; i < s.minRounds; i++) { const q = document.createElement("i"); if (i < L.complete) q.className = "on"; segs.appendChild(q); }
       c.appendChild(segs);
-    }
+    });
     cards.appendChild(c);
   });
 
   const rc = $("recent"); rc.textContent = "";
   d.recent.forEach(x => {
     const li = document.createElement("li"); if (x.cancelled) li.className = "cx";
-    const l = document.createElement("span"); l.textContent = x.ten + " · V" + x.round + " · " + x.area + (x.cancelled ? " (đã huỷ)" : "");
+    const l = document.createElement("span"); l.textContent = x.ten + " · " + (x.lane === "loi" ? "Lõi" : "Hầm") + " V" + x.round + " · " + x.area + (x.cancelled ? " (đã huỷ)" : "");
     const t = document.createElement("time"); t.textContent = hhmm(x.t);
     li.append(l, t); rc.appendChild(li);
   });

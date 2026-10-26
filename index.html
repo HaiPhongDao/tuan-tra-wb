@@ -147,6 +147,9 @@ body { margin: 0; }
 .modal .btns { display: flex; gap: 10px; }
 .modal .btns .btn { flex: 1; min-height: 52px; font-size: 17px; font-weight: 600; }
 .modal .btns .ok { background: var(--accent); color: var(--accent-fg); border-color: var(--accent); }
+.lanebar { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; background: var(--line); border-radius: 14px; padding: 5px; }
+.lanebar button { min-height: 48px; border: 0; border-radius: 10px; background: transparent; font-weight: 600; font-size: 16px; color: var(--muted); }
+.lanebar button[aria-selected="true"] { background: var(--surface); color: var(--fg); box-shadow: var(--shadow); }
 .sync { font-size: 13px; color: var(--muted); padding: 2px 2px 0; }
 .sync.bad { color: var(--warn); font-weight: 600; }
 </style>
@@ -185,8 +188,13 @@ body { margin: 0; }
     <div class="heroline"><span id="whoLine"></span></div>
   </section>
 
+  <div class="lanebar" id="laneBar" role="tablist" aria-label="Chọn tuyến tuần tra">
+    <button type="button" role="tab" id="laneHam" data-lane="ham">Tuần hầm</button>
+    <button type="button" role="tab" id="laneLoi" data-lane="loi">Tuần lõi</button>
+  </div>
+
   <section>
-    <div class="sectionhead"><h2>Điểm tuần tra</h2></div>
+    <div class="sectionhead"><h2 id="laneTitle">Điểm tuần tra</h2></div>
     <div class="grid" id="grid"></div>
     <p class="hint">Chạm một điểm khi đã tới nơi. Giờ lấy theo đồng hồ máy lúc chạm. Form Google mở ở tab mới, tuỳ chế độ trong Cài đặt: điền sẵn để bạn tự bấm Gửi, hoặc gửi luôn.</p>
   </section>
@@ -241,7 +249,7 @@ body { margin: 0; }
     <p class="hint" id="androidHint" style="display:none;color:var(--accent-2);font-weight:600">📱 Báo thức nền Android: Sẵn sàng báo chuông ngay cả khi tắt app.</p>
 
     <h3>Tuyến tuần tra</h3>
-    <div class="field"><span>Các điểm trong tuyến, theo thứ tự chạm</span><div class="routelist" id="routeList"></div></div>
+    <div class="field"><span>Điểm trong tuyến đang chọn (đổi tuyến ở thanh Tuần hầm / Tuần lõi trên trang chính), theo thứ tự chạm</span><div class="routelist" id="routeList"></div></div>
 
     <h3>Hạng mục không áp dụng</h3>
     <div class="field"><span>Chọn vị trí, rồi tích mục bỏ qua (không điền, để trống trong form)</span>
@@ -282,13 +290,15 @@ const ITEMS = [
   {id:"1828766863", label:"6.6.6 Bảng/biển công cộng"}
 ];
 const DEFAULT_ROUTE = ["Tùy chọn 2","MẶT SAU THÁP A WB","BÃI XE HẦM THÁP B WB","MẶT SAU THÁP B WB","LỐI VÀO HẦM CLB WB","BÃI XE HẦM C WB","BÃI XE HẦM D WB","MẶT SAU THÁP C WB"];
+const LOI_ROUTE = ["TẦNG 12 THÁP A","TẦNG MÁI THÁP A","TẦNG 12 THÁP B","TẦNG MÁI THÁP B","TẦNG 12 THÁP C","TẦNG MÁI THÁP C","TẦNG 12 THÁP D","TẦNG MÁI THÁP D"];
+const LANE_NAMES = { ham: "Tuần hầm", loi: "Tuần lõi" };
 const KEY = "tuantra_west_bay_v1";
 const $ = id => document.getElementById(id);
 const disp = a => a === "Tùy chọn 2" ? "BÃI XE HẦM A (Tùy chọn 2)" : a;
 const pad = n => String(n).padStart(2, "0");
 
 function newProfile(name) {
-  return { id: "p" + Date.now().toString(36) + Math.floor(Math.random() * 1000), name: name || "", shift: "auto", minRounds: 6, gap: 90, route: DEFAULT_ROUTE.slice() };
+  return { id: "p" + Date.now().toString(36) + Math.floor(Math.random() * 1000), name: name || "", shift: "auto", minRounds: 6, gap: 90, route: DEFAULT_ROUTE.slice(), lane: "ham", routes: { ham: DEFAULT_ROUTE.slice(), loi: LOI_ROUTE.slice() } };
 }
 let S = { v: 2, active: "", profiles: [], log: [], closed: {}, skip: {} };
 try {
@@ -309,6 +319,10 @@ try {
   }
 } catch (e) {}
 if (!S.skip) S.skip = {};
+S.profiles.forEach(pr => {
+  if (!pr.routes) { pr.lane = "ham"; pr.routes = { ham: (pr.route || DEFAULT_ROUTE).slice(), loi: LOI_ROUTE.slice() }; }
+  pr.route = pr.routes[pr.lane || "ham"];
+});
 // Mặc định theo yêu cầu: tầng 12 và tầng mái tháp A-D gửi 4 mục đầu (6.1-6.4); mọi vị trí khác chỉ gửi 2 mục bắt buộc (6.1, 6.2).
 if (!S.skipInit) {
   const tower = a => /^TẦNG (12|MÁI) THÁP [ABCD]$/.test(a);
@@ -331,7 +345,7 @@ if (!S.outbox) S.outbox = [];
 if (S.cred) { S.profiles = [S.profiles.find(x => x.id === S.active) || S.profiles[0]]; S.active = S.profiles[0].id; S.profiles[0].name = S.cred.n; }
 const CFG = window.TUANTRA || {};
 function P() { return S.profiles.find(x => x.id === S.active) || S.profiles[0]; }
-function save() { try { localStorage.setItem(KEY, JSON.stringify(S)); } catch (e) {} }
+function save() { try { const pp = S.profiles.find(x => x.id === S.active); if (pp && pp.routes) pp.routes[pp.lane] = pp.route; } catch (e) {} try { localStorage.setItem(KEY, JSON.stringify(S)); } catch (e) {} }
 
 function shiftAt(d) {
   if (P().shift !== "auto") return P().shift;
@@ -345,11 +359,13 @@ function shiftKey(d) {
   if (s === "Ca Đêm" && d.getHours() < 18) day.setDate(day.getDate() - 1);
   return day.getFullYear() + "-" + pad(day.getMonth() + 1) + "-" + pad(day.getDate()) + "|" + s;
 }
-function shiftLog() { const k = shiftKey(new Date()); return S.log.filter(e => e.key === k && e.pid === P().id); }
+const laneOf = e => e.lane || "ham";
+const closedKey = k => P().id + "|" + P().lane + "|" + k;
+function shiftLog() { const k = shiftKey(new Date()); return S.log.filter(e => e.key === k && e.pid === P().id && laneOf(e) === P().lane); }
 
 function currentRound() {
   const L = shiftLog();
-  const closed = (S.closed && S.closed[P().id + "|" + shiftKey(new Date())]) || 0;
+  const closed = (S.closed && S.closed[closedKey(shiftKey(new Date()))]) || 0;
   let r = 1;
   L.forEach(e => { if (e.round > r) r = e.round; });
   if (closed >= r) return { r: closed + 1, done: new Set() };
@@ -422,7 +438,7 @@ setInterval(flushForm, 30000);
 let flushing = false, syncState = "";
 function reportTap(e) {
   if (!S.cred || e.test) return;
-  S.outbox.push({ action: "tap", u: S.cred.u, k: S.cred.k, id: e.id, t: e.t, area: e.area, round: e.round, shift: e.shift, route: JSON.stringify(P().route) });
+  S.outbox.push({ action: "tap", u: S.cred.u, k: S.cred.k, id: e.id, t: e.t, area: e.area, round: e.round, lane: e.lane || "ham", shift: e.shift, route: JSON.stringify(P().route) });
   save(); flush();
 }
 function reportCancel(e) {
@@ -493,7 +509,7 @@ function doTap(area) {
   const now = new Date();
   const bad = Array.from(document.querySelectorAll("#items input:checked")).map(i => i.value);
   const entry = {
-    pid: P().id, mode: S.mode === "send" ? "send" : S.mode === "auto" ? "auto" : "fill", skip: (S.skip[area] || []).slice(), t: now.getTime(), key: shiftKey(now), shift: shiftAt(now), round: r, area, name: P().name.trim(),
+    pid: P().id, mode: S.mode === "send" ? "send" : S.mode === "auto" ? "auto" : "fill", skip: (S.skip[area] || []).slice(), t: now.getTime(), key: shiftKey(now), shift: shiftAt(now), round: r, area, lane: P().lane, name: P().name.trim(),
     bad, t667: $("t667").value.trim(), t7: $("t7").value.trim(), t8: $("t8").value.trim()
   };
   entry.id = (S.cred ? S.cred.u : "x") + "-" + entry.t;
@@ -600,8 +616,9 @@ function render() {
     if (mins >= 0) nextEl.innerHTML = "<b>" + fmt(new Date(due)) + "</b><span>Còn " + mins + " phút</span>";
     else { nextEl.classList.add("late"); nextEl.innerHTML = "<b>" + fmt(new Date(due)) + "</b><span>Trễ " + (-mins) + " phút</span>"; }
   }
+  $("laneTitle").textContent = LANE_NAMES[P().lane] + " · " + P().route.length + " điểm";
   $("whoLine").textContent = P().name.trim() || "Chưa nhập họ tên, mở Cài đặt";
-  $("shiftLine").textContent = shiftAt(now) + " · " + finishedRounds + " vòng đã xong";
+  $("shiftLine").textContent = shiftAt(now) + " · " + LANE_NAMES[P().lane] + " · " + finishedRounds + " vòng đã xong";
 
   const grid = $("grid"); grid.textContent = "";
   const nextArea = P().route.find(a => !done.has(a));
@@ -678,9 +695,9 @@ function buildStatic() {
     }
     clearTimeout(clrArm); clrArm = null; b.textContent = "Xoá hết nhật ký ca này";
     const k = shiftKey(new Date()), id = P().id;
-    S.log.filter(e => e.key === k && e.pid === id).forEach(reportCancel);
-    S.log = S.log.filter(e => !(e.key === k && e.pid === id));
-    if (S.closed) delete S.closed[id + "|" + k];
+    S.log.filter(e => e.key === k && e.pid === id && laneOf(e) === P().lane).forEach(reportCancel);
+    S.log = S.log.filter(e => !(e.key === k && e.pid === id && laneOf(e) === P().lane));
+    if (S.closed) delete S.closed[closedKey(k)];
     S.alarm = null; save(); render(); tickAlarm();
   });
   $("mode").value = S.mode === "send" ? "send" : S.mode === "auto" ? "auto" : "fill";
@@ -696,6 +713,8 @@ function buildStatic() {
     $("name").readOnly = true;
     $("delProf").hidden = true;
   }
+  $("laneHam").addEventListener("click", () => switchLane("ham"));
+  $("laneLoi").addEventListener("click", () => switchLane("loi"));
   $("alarmOff").addEventListener("click", () => { S.alarm = null; save(); tickAlarm(); notifyAndroidCancel(); });
   $("testBeep").addEventListener("click", () => {
     unlockAudio();
@@ -737,7 +756,7 @@ function buildStatic() {
   $("newRound").addEventListener("click", () => {
     const { r } = currentRound();
     S.closed = S.closed || {};
-    S.closed[P().id + "|" + shiftKey(new Date())] = r;
+    S.closed[closedKey(shiftKey(new Date()))] = r;
     save(); render();
   });
 }
@@ -773,10 +792,21 @@ function fillProf() {
   });
   sel.value = P().id;
 }
+function switchLane(l) {
+  const p = P();
+  if (l === p.lane) return;
+  p.routes[p.lane] = p.route;
+  p.lane = l; p.route = p.routes[l];
+  S.alarm = null; armed = null;
+  save(); loadProfileUI(); render(); tickAlarm();
+  try { notifyAndroidCancel(); } catch (e) {}
+}
 function loadProfileUI() {
   const p = P();
   $("name").value = p.name; $("shift").value = p.shift; $("minRounds").value = p.minRounds; $("gap").value = p.gap; $("remind").value = p.remind === undefined ? 3 : p.remind;
   AREAS.forEach((a, i) => { $("route_" + i).checked = p.route.indexOf(a) >= 0; });
+  $("laneHam").setAttribute("aria-selected", p.lane === "ham" ? "true" : "false");
+  $("laneLoi").setAttribute("aria-selected", p.lane === "loi" ? "true" : "false");
   fillProf();
 }
 buildStatic(); loadProfileUI(); render(); setSync(); flush();
