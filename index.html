@@ -499,6 +499,7 @@ setInterval(flushForm, 30000);
 let flushing = false, syncState = "";
 function reportTap(e) {
   if (!S.cred || e.test) return;
+  if (!P().sid) return;
   S.outbox.push(Object.assign({ action: "tap", u: S.cred.u, k: S.cred.k, id: e.id, t: e.t, area: e.area, round: e.round, lane: e.lane || "ham", shift: e.shift, route: JSON.stringify(P().route) }, e.via === "qr" ? { a: e.qa, qt: e.qt } : {}, P().sid && P().sid !== S.cred.u ? { as: P().sid } : {}));
   save(); flush();
 }
@@ -563,7 +564,7 @@ const fmtSec = d => pad(d.getHours()) + ":" + pad(d.getMinutes()) + ":" + pad(d.
 function whoOptions() {
   const opts = S.profiles.map((p, i) => ({ key: "p:" + p.id, label: p.name.trim() || "(chưa đặt tên " + (i + 1) + ")" }));
   (S.roster || []).forEach(r => { if (!S.profiles.some(p => p.sid === r.id)) opts.push({ key: "r:" + r.id, label: r.ten }); });
-  if (!S.cred) opts.push({ key: "new", label: "+ Tên khác..." });
+  opts.push({ key: "new", label: "+ Tên khác..." });
   return opts;
 }
 function cfNote(text, warn) { const n = $("cfNote"); n.textContent = text; n.className = "note" + (warn ? " warn" : ""); }
@@ -577,7 +578,7 @@ function openConfirm(ctx) {
   sel.value = "p:" + S.active;
   $("cfName").hidden = true; $("cfName").value = "";
   cfNote(S.test ? "Chế độ thử: lần này không được ghi nhận." : "", false);
-  sel.onchange = () => { $("cfName").hidden = sel.value !== "new"; cfForce = false; cfNote(S.test ? "Chế độ thử: lần này không được ghi nhận." : "", false); if (sel.value === "new") $("cfName").focus(); };
+  sel.onchange = () => { $("cfName").hidden = sel.value !== "new"; cfForce = false; cfNote(S.test ? "Chế độ thử: lần này không được ghi nhận." : "", false); if (sel.value === "new") { $("cfName").focus(); if (S.cred) cfNote("Tên này chưa có trong danh sách trưởng ca nên lần quét chỉ lưu trên máy này. Nhờ trưởng ca thêm người này vào danh sách nếu muốn tính vào báo cáo.", false); } };
   $("confirm").hidden = false;
   $("cfYes").onclick = confirmScan;
   $("cfNo").onclick = () => { $("confirm").hidden = true; };
@@ -828,7 +829,6 @@ function buildStatic() {
   modeHint();
   $("testMode").value = S.test ? "1" : "0";
   $("testMode").addEventListener("change", e => { S.test = e.target.value === "1"; save(); setSync(); });
-  $("addProf").hidden = !!S.cred;
   $("laneHam").addEventListener("click", () => switchLane("ham"));
   $("laneLoi").addEventListener("click", () => switchLane("loi"));
   $("alarmOff").addEventListener("click", () => { S.alarm = null; save(); tickAlarm(); notifyAndroidCancel(); });
