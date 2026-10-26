@@ -147,6 +147,12 @@ select, .staffrow input[type=text], .addbox input[type=text] { width: 100%; min-
 
   <details class="panel" id="staffBox" open>
     <summary>Nhân viên và ca trực</summary>
+    <div class="staffrow" id="teamBox">
+      <b>Link chung cho mọi nhân viên</b>
+      <div class="idline">Ai mở link này cũng chọn được tên mình trong danh sách và báo cáo cho chính họ.</div>
+      <code id="teamUrl"></code>
+      <div class="acts"><button class="btn primary" id="teamCopy" type="button">Sao chép link chung</button><button class="btn" id="teamRotate" type="button">Đổi mã link chung</button></div>
+    </div>
     <div id="roster"></div>
     <div class="addbox">
       <b>Thêm nhân viên</b>
@@ -273,6 +279,7 @@ function draw(d) {
 
   drawRoster(d);
   drawCfg(d);
+  drawTeam(d);
 }
 
 const CA_OPTS = ["Ngày", "Đêm", "Cả hai", "Nghỉ"];
@@ -350,6 +357,13 @@ function prompt1(url) {
   const ta = document.createElement("textarea"); ta.value = url; ta.readOnly = true; ta.style.cssText = "width:100%;min-height:90px;margin-top:8px";
   $("roster").prepend(ta); ta.select(); toast("Chọn và sao chép link trong ô vừa hiện");
 }
+let teamUrlNow = "";
+function drawTeam(d) {
+  if (!d.teamKey) return;
+  const base = new URL("index.html", location.href).href.replace(/index\.html$/, "");
+  teamUrlNow = base + "?t=" + encodeURIComponent(d.teamKey);
+  $("teamUrl").textContent = teamUrlNow;
+}
 function drawCfg(d) {
   const box = $("cfgList"); box.textContent = "";
   Object.keys(CFG_LABELS).forEach(k => {
@@ -368,6 +382,17 @@ $("addStaff").addEventListener("click", async () => {
   if (!id || !ten) { toast("Nhập mã và họ tên"); return; }
   const ok = await act({ action: "staffSet", id, ten, ca: $("newCa").value, on: "1" }, "Đã thêm " + ten);
   if (ok) { $("newId").value = ""; $("newName").value = ""; }
+});
+$("teamCopy").addEventListener("click", async () => {
+  try { await navigator.clipboard.writeText(teamUrlNow); toast("Đã sao chép link chung"); }
+  catch (e) { const r = document.createRange(); r.selectNodeContents($("teamUrl")); const sel = getSelection(); sel.removeAllRanges(); sel.addRange(r); toast("Đã chọn link, hãy sao chép"); }
+});
+let teamArm = null;
+$("teamRotate").addEventListener("click", () => {
+  const b = $("teamRotate");
+  if (!teamArm) { b.textContent = "Chạm lại để đổi (link cũ hết hiệu lực)"; teamArm = setTimeout(() => { teamArm = null; b.textContent = "Đổi mã link chung"; }, 3500); return; }
+  clearTimeout(teamArm); teamArm = null; b.textContent = "Đổi mã link chung";
+  act({ action: "teamRotate" }, "Đã đổi mã link chung. Gửi lại link mới cho nhân viên");
 });
 $("go").addEventListener("click", load);
 $("ak").addEventListener("keydown", e => { if (e.key === "Enter") load(); });

@@ -20,6 +20,7 @@ const CFG_DEFAULTS = [
   ['nightStartHour', 18, 'Giờ bắt đầu Ca Đêm'],
   ['email', '', 'Email nhận cảnh báo đỏ. Để trống thì dùng email của chủ Sheet.'],
   ['emailOn', 0, '1 = gửi email cảnh báo đỏ. 0 = tắt (mặc định)'],
+  ['teamKey', '', 'Mã của link chung cho nhân viên. Tự tạo, đổi ở trang trưởng ca.'],
   ['requireQr', 0, '1 = chỉ nhận lần chạm có quét đúng mã QR của điểm. 0 = cho phép chạm tay']
 ];
 
@@ -85,6 +86,7 @@ function doGet(e) {
     if (p.action === 'staffDel') return out_(actStaffDel_(p));
     if (p.action === 'cfgSet') return out_(actCfgSet_(p));
     if (p.action === 'roster') return out_(actRoster_(p));
+    if (p.action === 'teamRotate') return out_(actTeamRotate_(p));
     if (p.action === 'pointsList') return out_(actPointsList_(p));
     if (p.action === 'pointRotate') return out_(actPointRotate_(p));
     return out_({ ok: false, err: 'action' });
@@ -97,17 +99,31 @@ function out_(o) {
   return ContentService.createTextOutput(JSON.stringify(o)).setMimeType(ContentService.MimeType.JSON);
 }
 
-function actTap_(p) {
+/* Người gọi API: link riêng (u, k) hoặc link chung (u = _team, k = teamKey, bắt buộc kèm as = mã nhân viên). */
+function actor_(p) {
+  if (String(p.u) === '_team') {
+    const c = cfgMap_();
+    if (!c.teamKey || String(p.k) !== String(c.teamKey)) return { err: 'key' };
+    const t = staffList_().find(x => x.id === String(p.as || '') && x.on);
+    if (!t) return { err: 'as' };
+    return { actor: '_team', uid: t.id, ten: t.ten, by: 'chung' };
+  }
   const nv = findStaff_(p.u, p.k);
-  if (!nv) return { ok: false, err: 'key' };
-  const id = String(p.id || '');
-  if (!id) return { ok: false, err: 'id' };
-  let uid = nv.id, ten = nv.ten, by = '';
+  if (!nv) return { err: 'key' };
   if (p.as && String(p.as) !== nv.id) {
     const t = staffList_().find(x => x.id === String(p.as) && x.on);
-    if (!t) return { ok: false, err: 'as' };
-    uid = t.id; ten = t.ten; by = nv.id;
+    if (!t) return { err: 'as' };
+    return { actor: nv.id, uid: t.id, ten: t.ten, by: nv.id };
   }
+  return { actor: nv.id, uid: nv.id, ten: nv.ten, by: '' };
+}
+
+function actTap_(p) {
+  const ac = actor_(p);
+  if (ac.err) return { ok: false, err: ac.err };
+  const id = String(p.id || '');
+  if (!id) return { ok: false, err: 'id' };
+  const uid = ac.uid, ten = ac.ten, by = ac.by;
   let via = 'tay', area = p.area || '';
   if (p.a !== undefined && p.a !== '' && p.qt) {
     const pt = ensurePoints_()[Number(p.a)];
@@ -131,8 +147,8 @@ function actTap_(p) {
 }
 
 function actCancel_(p) {
-  const nv = findStaff_(p.u, p.k);
-  if (!nv) return { ok: false, err: 'key' };
+  const ac = actor_(p);
+  if (ac.err) return { ok: false, err: ac.err };
   const lock = LockService.getScriptLock();
   lock.waitLock(20000);
   try {
@@ -142,7 +158,7 @@ function actCancel_(p) {
     const from = Math.max(2, n - 500);
     const vals = sh.getRange(from, 1, n - from + 1, 14).getValues();
     for (let i = 0; i < vals.length; i++) {
-      if (String(vals[i][0]) === String(p.id) && (String(vals[i][3]) === nv.id || String(vals[i][13]) === nv.id)) {
+      if (String(vals[i][0]) === String(p.id) && (String(vals[i][3]) === ac.uid || String(vals[i][13]) === ac.actor)) {
         sh.getRange(from + i, 10).setValue('x');
         return { ok: true };
       }
@@ -161,7 +177,9 @@ function actDash_(p) {
   const c = cfgMap_();
   const cfg = {};
   EDITABLE_CFG.forEach(k => { cfg[k] = c[k]; });
-  return Object.assign({ ok: true }, dashboard_(Date.now(), true), { roster: staffList_(), cfgAll: cfg });
+  let team = String(c.teamKey || '');
+  if (!team) { team = randKey_(); setCfg_('teamKey', team); }
+  return Object.assign({ ok: true }, dashboard_(Date.now(), true), { roster: staffList_(), cfgAll: cfg, teamKey: team });
 }
 
 const EDITABLE_CFG = ['gapMin', 'tolMin', 'startGraceMin', 'roundGraceMin', 'minRounds', 'dayStartHour', 'nightStartHour', 'email', 'emailOn', 'requireQr'];
@@ -221,9 +239,17 @@ function actStaffDel_(p) {
 }
 
 function actRoster_(p) {
-  const nv = findStaff_(p.u, p.k);
-  if (!nv) return { ok: false, err: 'key' };
+  if (String(p.u) === '_team') {
+    const c = cfgMap_();
+    if (!c.teamKey || String(p.k) !== String(c.teamKey)) return { ok: false, err: 'key' };
+  } else if (!findStaff_(p.u, p.k)) return { ok: false, err: 'key' };
   return { ok: true, roster: staffList_().filter(s => s.on).map(s => ({ id: s.id, ten: s.ten })) };
+}
+
+function actTeamRotate_(p) {
+  if (!adminOk_(p)) return { ok: false, err: 'admin' };
+  setCfg_('teamKey', randKey_());
+  return { ok: true };
 }
 
 function actPointsList_(p) {
