@@ -262,9 +262,10 @@ function draw(d) {
   });
 
   const rc = $("recent"); rc.textContent = "";
+  const nameOf = {}; d.staff.forEach(s => { nameOf[s.id] = s.ten; });
   d.recent.forEach(x => {
     const li = document.createElement("li"); if (x.cancelled) li.className = "cx";
-    const l = document.createElement("span"); l.textContent = x.ten + " · " + (x.lane === "loi" ? "Lõi" : "Hầm") + " V" + x.round + " · " + x.area + (x.via === "qr" ? " · QR" : " · tay") + (x.cancelled ? " (đã huỷ)" : "");
+    const l = document.createElement("span"); l.textContent = x.ten + " · " + (x.lane === "loi" ? "Lõi" : "Hầm") + " V" + x.round + " · " + x.area + (x.via === "qr" ? " · QR" : " · tay") + (x.by ? " · quét hộ bởi " + (nameOf[x.by] || x.by) : "") + (x.cancelled ? " (đã huỷ)" : "");
     const t = document.createElement("time"); t.textContent = hhmm(x.t);
     li.append(l, t); rc.appendChild(li);
   });

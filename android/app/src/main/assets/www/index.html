@@ -161,6 +161,13 @@ body { margin: 0; }
 #scanner video { flex: 1; width: 100%; object-fit: cover; min-height: 0; }
 #scanner .bar { padding: 14px 16px calc(14px + env(safe-area-inset-bottom, 0px)); display: flex; gap: 10px; align-items: center; background: #000; color: #fff; }
 #scanner .bar span { flex: 1; font-size: 15px; }
+.modal .cfrow { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; padding: 8px 0; border-bottom: 1px solid var(--line); font-size: 15px; }
+.modal .cfrow.col { flex-direction: column; align-items: stretch; gap: 6px; border-bottom: 0; }
+.modal .cfrow span { color: var(--muted); font-size: 13px; }
+.modal .cfrow b { font-variant-numeric: tabular-nums; }
+.modal select, .modal input[type=text] { width: 100%; min-height: 48px; font: inherit; font-size: 17px; font-weight: 600; color: var(--fg); background: var(--bg); border: 1px solid var(--line); border-radius: 10px; padding: 8px 12px; }
+.modal #cfName { margin-top: 8px; }
+.modal .note { margin-top: 10px; }
 .sync { font-size: 13px; color: var(--muted); padding: 2px 2px 0; }
 .sync.bad { color: var(--warn); font-weight: 600; }
 </style>
@@ -238,11 +245,11 @@ body { margin: 0; }
     <div class="row"><button class="btn danger" id="delProf" type="button">Xoá hồ sơ này</button></div>
     <p class="hint">Mỗi hồ sơ có tên, ca, tuyến và số vòng riêng. Chỉ ghi cho người thật sự đã đi tuần điểm đó.</p>
 
-    <h3>Báo về trưởng ca</h3>
+    <h3>Chế độ thử</h3>
     <label class="field"><span>Chế độ thử</span>
-      <select id="testMode"><option value="0">Tắt: mỗi lần chạm báo về trưởng ca</option><option value="1">Bật: chạm thử, không báo về</option></select>
+      <select id="testMode"><option value="0">Tắt: ghi nhận bình thường</option><option value="1">Bật: chạm thử, không ghi nhận</option></select>
     </label>
-    <p class="hint">Mỗi lần chạm, trang báo giờ và điểm về trưởng ca. Bật chế độ thử khi chỉ để tập dùng, nhớ tắt lại trước khi đi tuần thật.</p>
+    <p class="hint">Bật khi chỉ tập dùng: các lần chạm không được ghi nhận. Nhớ tắt lại trước khi đi tuần thật.</p>
 
     <h3>Gửi form</h3>
     <label class="field"><span>Khi chạm một điểm</span>
@@ -276,6 +283,7 @@ body { margin: 0; }
 <div class="full" id="okBox" role="status" hidden>
   <div class="tick" aria-hidden="true">✓</div>
   <div class="big" id="okTitle">Đã ghi nhận</div>
+  <div class="sub" id="okWho"></div>
   <div class="sub" id="okArea"></div>
   <div class="sub" id="okNext"></div>
   <button class="btn" id="okClose" type="button">Đóng</button>
@@ -296,8 +304,11 @@ body { margin: 0; }
 
 <div class="modal" id="confirm" role="dialog" aria-modal="true" aria-labelledby="cfTitle" hidden>
   <div>
-    <h2 id="cfTitle">Xác nhận đã tới điểm</h2>
+    <h2 id="cfTitle">Xác nhận quét điểm</h2>
     <div class="big" id="cfArea"></div>
+    <div class="cfrow"><span>Giờ quét</span><b id="cfTime"></b></div>
+    <label class="cfrow col"><span>Người quét</span><select id="cfWho"></select></label>
+    <input type="text" id="cfName" placeholder="Nhập họ tên người quét" aria-label="Họ tên người quét" hidden>
     <p class="note" id="cfNote"></p>
     <div class="btns">
       <button class="btn" id="cfNo" type="button">Huỷ</button>
@@ -387,7 +398,12 @@ if (!S.outbox) S.outbox = [];
     if (u && k) { S.cred = { u: u, k: k, n: n || u }; localStorage.setItem(KEY, JSON.stringify(S)); history.replaceState(null, "", location.pathname); }
   } catch (e) {}
 })();
-if (S.cred) { S.profiles = [S.profiles.find(x => x.id === S.active) || S.profiles[0]]; S.active = S.profiles[0].id; S.profiles[0].name = S.cred.n; }
+if (S.cred) {
+  let own = S.profiles.find(x => x.sid === S.cred.u);
+  if (!own) { own = S.profiles.find(x => x.id === S.active) || S.profiles[0]; own.sid = S.cred.u; }
+  own.name = S.cred.n; S.ownerPid = own.id;
+  if (!S.profiles.some(x => x.id === S.active)) S.active = own.id;
+}
 const CFG = window.TUANTRA || {};
 function P() { return S.profiles.find(x => x.id === S.active) || S.profiles[0]; }
 function save() { try { const pp = S.profiles.find(x => x.id === S.active); if (pp && pp.routes) pp.routes[pp.lane] = pp.route; } catch (e) {} try { localStorage.setItem(KEY, JSON.stringify(S)); } catch (e) {} }
@@ -483,7 +499,7 @@ setInterval(flushForm, 30000);
 let flushing = false, syncState = "";
 function reportTap(e) {
   if (!S.cred || e.test) return;
-  S.outbox.push(Object.assign({ action: "tap", u: S.cred.u, k: S.cred.k, id: e.id, t: e.t, area: e.area, round: e.round, lane: e.lane || "ham", shift: e.shift, route: JSON.stringify(P().route) }, e.via === "qr" ? { a: e.qa, qt: e.qt } : {}));
+  S.outbox.push(Object.assign({ action: "tap", u: S.cred.u, k: S.cred.k, id: e.id, t: e.t, area: e.area, round: e.round, lane: e.lane || "ham", shift: e.shift, route: JSON.stringify(P().route) }, e.via === "qr" ? { a: e.qa, qt: e.qt } : {}, P().sid && P().sid !== S.cred.u ? { as: P().sid } : {}));
   save(); flush();
 }
 function reportCancel(e) {
@@ -501,6 +517,7 @@ async function flush() {
       const j = await r.json();
       if (j.ok || j.err === "dup" || j.err === "missing") { S.outbox.shift(); save(); }
       else if (j.err === "key") { syncState = "key"; break; }
+      else if (j.err === "as") { S.outbox.shift(); save(); }
       else if (j.err === "qr" || j.err === "qrbad") { S.outbox.shift(); save(); syncState = j.err; }
       else { syncState = "net"; break; }
     } catch (err) { syncState = "net"; break; }
@@ -510,15 +527,24 @@ async function flush() {
 function setSync() {
   const el = $("sync");
   if (!el) return;
+  el.classList.remove("bad");
+  const warn = t => { el.textContent = t; el.classList.add("bad"); el.hidden = false; };
+  if (S.test) { el.textContent = "Chế độ thử: các lần chạm không được ghi nhận"; el.hidden = false; return; }
   if (!S.cred) { el.hidden = true; return; }
-  el.hidden = false; el.classList.remove("bad");
-  if (!CFG.SCRIPT_URL) { el.textContent = "Chưa nối với trưởng ca"; el.classList.add("bad"); }
-  else if (S.test) el.textContent = "Chế độ thử: không báo về trưởng ca";
-  else if (syncState === "qr") { el.textContent = "Trưởng ca yêu cầu quét mã QR, lần chạm tay vừa rồi không được ghi nhận"; el.classList.add("bad"); }
-  else if (syncState === "qrbad") { el.textContent = "Mã QR không đúng hoặc đã bị đổi, lần quét vừa rồi không được ghi nhận"; el.classList.add("bad"); }
-  else if (syncState === "key") { el.textContent = "Mã nhân viên không hợp lệ, báo trưởng ca"; el.classList.add("bad"); }
-  else if (S.outbox.length) { el.textContent = "Chờ báo về trưởng ca: " + S.outbox.length + " lần chạm (sẽ tự gửi lại khi có mạng)"; el.classList.add("bad"); }
-  else el.textContent = "Đã báo về trưởng ca";
+  if (!CFG.SCRIPT_URL) return warn("Chưa kết nối máy chủ");
+  if (syncState === "qr") return warn("Hệ thống yêu cầu quét mã QR, lần chạm tay vừa rồi không được ghi nhận");
+  if (syncState === "qrbad") return warn("Mã QR không đúng hoặc đã bị đổi, lần quét vừa rồi không được ghi nhận");
+  if (syncState === "key") return warn("Mã nhân viên không hợp lệ, hãy báo trưởng ca");
+  if (S.outbox.length) return warn(S.outbox.length + " lần chạm đang chờ gửi, sẽ tự gửi lại khi có mạng");
+  el.hidden = true;
+}
+async function loadRoster() {
+  if (!S.cred || !CFG.SCRIPT_URL) return;
+  try {
+    const r = await fetch(CFG.SCRIPT_URL + "?" + new URLSearchParams({ action: "roster", u: S.cred.u, k: S.cred.k }).toString(), { cache: "no-store" });
+    const j = await r.json();
+    if (j.ok && Array.isArray(j.roster)) { S.roster = j.roster; save(); }
+  } catch (e) {}
 }
 document.addEventListener("keydown", e => { if (e.key === "Escape") $("confirm").hidden = true; });
 setInterval(flush, 30000);
@@ -531,30 +557,75 @@ function openUrl(url) {
 }
 
 let armed = null, armTimer = null, delArmT = null, delArmTm = null;
-// Chạm một điểm: hiện hộp xác nhận trước, chỉ quét khi bấm Xác nhận.
-function tapSpot(area) {
-  const { r, done } = currentRound();
-  if (!P().name.trim()) { $("settings").open = true; $("name").focus(); return; }
+// Chạm tay hoặc quét QR đều hiện hộp xác nhận: điểm, giờ, người quét (đổi được để quét hộ).
+let cfCtx = null, cfForce = false;
+const fmtSec = d => pad(d.getHours()) + ":" + pad(d.getMinutes()) + ":" + pad(d.getSeconds());
+function whoOptions() {
+  const opts = S.profiles.map((p, i) => ({ key: "p:" + p.id, label: p.name.trim() || "(chưa đặt tên " + (i + 1) + ")" }));
+  (S.roster || []).forEach(r => { if (!S.profiles.some(p => p.sid === r.id)) opts.push({ key: "r:" + r.id, label: r.ten }); });
+  if (!S.cred) opts.push({ key: "new", label: "+ Tên khác..." });
+  return opts;
+}
+function cfNote(text, warn) { const n = $("cfNote"); n.textContent = text; n.className = "note" + (warn ? " warn" : ""); }
+function openConfirm(ctx) {
+  cfCtx = ctx; cfForce = false;
   unlockAudio();
-  const hit = shiftLog().filter(e => e.round === r && e.area === area).pop();
-  $("cfArea").textContent = disp(area);
-  const note = $("cfNote");
-  if (done.has(area) && hit) {
-    note.textContent = "Điểm này đã quét lúc " + fmt(new Date(hit.t)) + " trong vòng này. Bạn có chắc muốn quét lại?";
-    note.className = "note warn";
-  } else {
-    note.textContent = (S.mode === "auto" ? "Bấm Xác nhận sẽ báo về trưởng ca và tự gửi form ngầm, không mở tab." : S.mode === "send" ? "Bấm Xác nhận sẽ báo về trưởng ca và gửi form luôn." : "Bấm Xác nhận sẽ báo về trưởng ca và mở form điền sẵn.");
-    if (S.test) note.textContent = "Chế độ thử: không báo về trưởng ca.";
-    note.className = "note";
-  }
+  $("cfArea").textContent = disp(ctx.area);
+  $("cfTime").textContent = fmtSec(new Date(ctx.t0 || Date.now())) + (ctx.qr ? " · quét QR" : " · chạm tay");
+  const sel = $("cfWho"); sel.textContent = "";
+  whoOptions().forEach(o => { const op = document.createElement("option"); op.value = o.key; op.textContent = o.label; sel.appendChild(op); });
+  sel.value = "p:" + S.active;
+  $("cfName").hidden = true; $("cfName").value = "";
+  cfNote(S.test ? "Chế độ thử: lần này không được ghi nhận." : "", false);
+  sel.onchange = () => { $("cfName").hidden = sel.value !== "new"; cfForce = false; cfNote(S.test ? "Chế độ thử: lần này không được ghi nhận." : "", false); if (sel.value === "new") $("cfName").focus(); };
   $("confirm").hidden = false;
-  $("cfYes").onclick = () => { $("confirm").hidden = true; doTap(area); };
+  $("cfYes").onclick = confirmScan;
   $("cfNo").onclick = () => { $("confirm").hidden = true; };
   $("cfYes").focus();
 }
-function doTap(area, qr) {
+function confirmScan() {
+  const ctx = cfCtx; if (!ctx) return;
+  const key = $("cfWho").value;
+  let target = null;
+  if (key.indexOf("p:") === 0) target = S.profiles.find(p => p.id === key.slice(2));
+  else if (key.indexOf("r:") === 0) {
+    const r = (S.roster || []).find(x => x.id === key.slice(2));
+    if (r) { target = newProfile(r.ten); target.sid = r.id; }
+  } else {
+    const nm = $("cfName").value.trim();
+    if (!nm) { cfNote("Nhập họ tên người quét.", true); return; }
+    target = newProfile(nm);
+  }
+  if (!target) { cfNote("Không tìm thấy người này.", true); return; }
+  if (!target.name.trim()) { cfNote("Người này chưa có tên. Chọn người khác hoặc nhập tên trong Cài đặt.", true); return; }
+  const isNew = !S.profiles.some(p => p.id === target.id);
+  const lane = target.routes.ham.indexOf(ctx.area) >= 0 ? "ham" : target.routes.loi.indexOf(ctx.area) >= 0 ? "loi" : null;
+  if (!lane) { cfNote(disp(ctx.area) + " không nằm trong Tuần hầm hay Tuần lõi của người này.", true); return; }
+  if (isNew) S.profiles.push(target);
+  const prevActive = S.active;
+  S.active = target.id;
+  if (target.lane !== lane) { target.routes[target.lane] = target.route; target.lane = lane; target.route = target.routes[lane]; }
+  const { r, done } = currentRound();
+  const hit = shiftLog().filter(e => e.round === r && e.area === ctx.area).pop();
+  if (done.has(ctx.area) && hit && !cfForce) {
+    cfForce = true;
+    S.active = prevActive;
+    if (isNew) S.profiles = S.profiles.filter(p => p.id !== target.id);
+    cfNote("Điểm này đã quét lúc " + fmt(new Date(hit.t)) + " trong vòng này. Bấm Xác nhận lần nữa để quét lại.", true);
+    return;
+  }
+  $("confirm").hidden = true;
+  S.alarm = null;
+  loadProfileUI();
+  const t0 = ctx.t0 && Date.now() - ctx.t0 < 600000 ? ctx.t0 : undefined;
+  doTap(ctx.area, ctx.qr, t0);
+  const nd = currentRound();
+  showOk(ctx.area, P().route.find(a => !nd.done.has(a)), P().name);
+}
+function tapSpot(area) { openConfirm({ area: area }); }
+function doTap(area, qr, t0) {
   const { r } = currentRound();
-  const now = new Date();
+  const now = new Date(t0 || Date.now());
   const bad = Array.from(document.querySelectorAll("#items input:checked")).map(i => i.value);
   const entry = {
     pid: P().id, mode: S.mode === "send" ? "send" : S.mode === "auto" ? "auto" : "fill", skip: (S.skip[area] || []).slice(), t: now.getTime(), key: shiftKey(now), shift: shiftAt(now), round: r, area, lane: P().lane, via: qr ? "qr" : "tay", name: P().name.trim(),
@@ -757,11 +828,7 @@ function buildStatic() {
   modeHint();
   $("testMode").value = S.test ? "1" : "0";
   $("testMode").addEventListener("change", e => { S.test = e.target.value === "1"; save(); setSync(); });
-  if (S.cred) {
-    $("prof").parentElement.hidden = true;
-    $("name").readOnly = true;
-    $("delProf").hidden = true;
-  }
+  $("addProf").hidden = !!S.cred;
   $("laneHam").addEventListener("click", () => switchLane("ham"));
   $("laneLoi").addEventListener("click", () => switchLane("loi"));
   $("alarmOff").addEventListener("click", () => { S.alarm = null; save(); tickAlarm(); notifyAndroidCancel(); });
@@ -854,13 +921,16 @@ function loadProfileUI() {
   const p = P();
   $("name").value = p.name; $("shift").value = p.shift; $("minRounds").value = p.minRounds; $("gap").value = p.gap; $("remind").value = p.remind === undefined ? 3 : p.remind;
   AREAS.forEach((a, i) => { $("route_" + i).checked = p.route.indexOf(a) >= 0; });
+  $("name").readOnly = !!p.sid;
+  $("delProf").hidden = !!(S.cred && p.sid && p.sid === S.cred.u);
   $("laneHam").setAttribute("aria-selected", p.lane === "ham" ? "true" : "false");
   $("laneLoi").setAttribute("aria-selected", p.lane === "loi" ? "true" : "false");
   fillProf();
 }
 // ---- Quét mã QR tại điểm: không cần xác nhận, quét xong là ghi nhận.
 let okTimer = null;
-function showOk(area, nextArea) {
+function showOk(area, nextArea, who) {
+  $("okWho").textContent = who ? "Người quét: " + who : "";
   $("okArea").textContent = disp(area) + " · " + fmt(new Date());
   $("okNext").textContent = nextArea ? "Điểm kế: " + disp(nextArea) : "Đã đủ điểm của vòng này";
   $("okBox").hidden = false;
@@ -876,24 +946,7 @@ function showErr(title, msg, force) {
 function handleScan(sc) {
   const area = AREAS[sc.a];
   if (!area) { showErr("Mã QR không hợp lệ", "Không nhận ra điểm này. Báo trưởng ca."); return; }
-  if (!P().name.trim()) { showErr("Chưa có tên", "Mở link riêng của bạn do trưởng ca gửi một lần trên máy này, hoặc nhập tên trong Cài đặt."); return; }
-  const p = P();
-  const lane = p.routes.ham.indexOf(area) >= 0 ? "ham" : p.routes.loi.indexOf(area) >= 0 ? "loi" : null;
-  if (!lane) { showErr("Điểm không thuộc tuyến", disp(area) + " không nằm trong Tuần hầm hay Tuần lõi của bạn."); return; }
-  if (lane !== p.lane) switchLane(lane);
-  unlockAudio();
-  const { r, done } = currentRound();
-  const hit = shiftLog().filter(e => e.round === r && e.area === area).pop();
-  const record = () => {
-    doTap(area, { a: sc.a, t: sc.t });
-    const nd = currentRound();
-    showOk(area, P().route.find(a => !nd.done.has(a)));
-  };
-  if (done.has(area) && hit) {
-    showErr("Điểm đã quét", disp(area) + " đã quét lúc " + fmt(new Date(hit.t)) + " trong vòng này.", record);
-    return;
-  }
-  record();
+  openConfirm({ area: area, qr: { a: sc.a, t: sc.t }, t0: Date.now() });
 }
 function parseScanText(txt) {
   try {
@@ -956,7 +1009,7 @@ $("scanStop").addEventListener("click", stopScanner);
 $("okClose").addEventListener("click", () => { $("okBox").hidden = true; });
 $("errClose").addEventListener("click", () => { $("errBox").hidden = true; });
 
-buildStatic(); loadProfileUI(); render(); setSync(); flush();
+buildStatic(); loadProfileUI(); render(); setSync(); flush(); loadRoster(); setInterval(loadRoster, 600000);
 if (SCAN) handleScan(SCAN);
 if (window.Android) {
   const btnBat = $("btnAndroidBattery");

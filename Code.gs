@@ -33,7 +33,7 @@ function khoiTao() {
   }
   let lg = ss.getSheetByName(SHEET_LOG) || ss.insertSheet(SHEET_LOG);
   if (lg.getLastRow() === 0) {
-    lg.appendRow(['id', 'gio_may_chu', 'gio_may_nv', 'uid', 'ten', 'ca', 'vong', 'khu_vuc', 'thu', 'huy', 'tuyen', 'loai_tuan', 'qua']);
+    lg.appendRow(['id', 'gio_may_chu', 'gio_may_nv', 'uid', 'ten', 'ca', 'vong', 'khu_vuc', 'thu', 'huy', 'tuyen', 'loai_tuan', 'qua', 'quet_ho_boi']);
     lg.setFrozenRows(1);
   }
   let cf = ss.getSheetByName(SHEET_CFG) || ss.insertSheet(SHEET_CFG);
@@ -79,6 +79,7 @@ function doGet(e) {
     if (p.action === 'staffKey') return out_(actStaffKey_(p));
     if (p.action === 'staffDel') return out_(actStaffDel_(p));
     if (p.action === 'cfgSet') return out_(actCfgSet_(p));
+    if (p.action === 'roster') return out_(actRoster_(p));
     if (p.action === 'pointsList') return out_(actPointsList_(p));
     if (p.action === 'pointRotate') return out_(actPointRotate_(p));
     return out_({ ok: false, err: 'action' });
@@ -96,6 +97,12 @@ function actTap_(p) {
   if (!nv) return { ok: false, err: 'key' };
   const id = String(p.id || '');
   if (!id) return { ok: false, err: 'id' };
+  let uid = nv.id, ten = nv.ten, by = '';
+  if (p.as && String(p.as) !== nv.id) {
+    const t = staffList_().find(x => x.id === String(p.as) && x.on);
+    if (!t) return { ok: false, err: 'as' };
+    uid = t.id; ten = t.ten; by = nv.id;
+  }
   let via = 'tay', area = p.area || '';
   if (p.a !== undefined && p.a !== '' && p.qt) {
     const pt = ensurePoints_()[Number(p.a)];
@@ -113,7 +120,7 @@ function actTap_(p) {
       const ids = sh.getRange(from, 1, n - from + 1, 1).getValues();
       for (let i = 0; i < ids.length; i++) if (String(ids[i][0]) === id) return { ok: false, err: 'dup' };
     }
-    sh.appendRow([id, new Date(), Number(p.t) || '', nv.id, nv.ten, p.shift || '', Number(p.round) || 1, area, '', '', p.route || '', p.lane === 'loi' ? 'loi' : 'ham', via]);
+    sh.appendRow([id, new Date(), Number(p.t) || '', uid, ten, p.shift || '', Number(p.round) || 1, area, '', '', p.route || '', p.lane === 'loi' ? 'loi' : 'ham', via, by]);
   } finally { lock.releaseLock(); }
   return { ok: true };
 }
@@ -128,9 +135,9 @@ function actCancel_(p) {
     const n = sh.getLastRow();
     if (n < 2) return { ok: false, err: 'missing' };
     const from = Math.max(2, n - 500);
-    const vals = sh.getRange(from, 1, n - from + 1, 4).getValues();
+    const vals = sh.getRange(from, 1, n - from + 1, 14).getValues();
     for (let i = 0; i < vals.length; i++) {
-      if (String(vals[i][0]) === String(p.id) && String(vals[i][3]) === nv.id) {
+      if (String(vals[i][0]) === String(p.id) && (String(vals[i][3]) === nv.id || String(vals[i][13]) === nv.id)) {
         sh.getRange(from + i, 10).setValue('x');
         return { ok: true };
       }
@@ -206,6 +213,12 @@ function actStaffDel_(p) {
     f.sh.deleteRow(f.row);
   } finally { lock.releaseLock(); }
   return { ok: true };
+}
+
+function actRoster_(p) {
+  const nv = findStaff_(p.u, p.k);
+  if (!nv) return { ok: false, err: 'key' };
+  return { ok: true, roster: staffList_().filter(s => s.on).map(s => ({ id: s.id, ten: s.ten })) };
 }
 
 function actPointsList_(p) {
@@ -295,9 +308,9 @@ function readTaps_(sinceMs) {
   const n = sh.getLastRow();
   if (n < 2) return [];
   const from = Math.max(2, n - 3000);
-  return sh.getRange(from, 1, n - from + 1, 13).getValues().map(r => ({
+  return sh.getRange(from, 1, n - from + 1, 14).getValues().map(r => ({
     id: String(r[0]), t: r[1] instanceof Date ? r[1].getTime() : 0, uid: String(r[3]), ten: String(r[4]),
-    shift: String(r[5]), round: Number(r[6]) || 1, area: String(r[7]), test: String(r[8]) !== '', cancelled: String(r[9]) !== '', route: String(r[10]), lane: String(r[11]) === 'loi' ? 'loi' : 'ham', via: String(r[12]) === 'qr' ? 'qr' : 'tay'
+    shift: String(r[5]), round: Number(r[6]) || 1, area: String(r[7]), test: String(r[8]) !== '', cancelled: String(r[9]) !== '', route: String(r[10]), lane: String(r[11]) === 'loi' ? 'loi' : 'ham', via: String(r[12]) === 'qr' ? 'qr' : 'tay', by: String(r[13] || '')
   })).filter(x => x.t >= sinceMs);
 }
 
@@ -400,7 +413,7 @@ function dashboard_(now, withKeys) {
     }
     return row;
   });
-  const recent = taps.sort((a, b) => b.t - a.t).slice(0, 40).map(x => ({ id: x.id, t: x.t, uid: x.uid, ten: x.ten, area: x.area, round: x.round, lane: x.lane, via: x.via, cancelled: x.cancelled }));
+  const recent = taps.sort((a, b) => b.t - a.t).slice(0, 40).map(x => ({ id: x.id, t: x.t, uid: x.uid, ten: x.ten, area: x.area, round: x.round, lane: x.lane, via: x.via, by: x.by, cancelled: x.cancelled }));
   return { now, win: { label: win.label, start: win.start, end: win.end }, staff: rows, recent, cfg: { gapMin: Number(c.gapMin), minRounds } };
 }
 
